@@ -41,6 +41,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         setupStatusItem()
         setupBadgeTimer()
         registerHotkey()
+
+        // If the user previously enabled Reminders sync, start observing and
+        // PULL current remote state so any changes made in Reminders (or via
+        // Siri / Apple Watch) while Docket wasn't running surface immediately.
+        //
+        // We deliberately do NOT call syncAll() here: that would first push
+        // every local task back to Reminders, and on launch our in-memory
+        // state is by definition stale (we haven't observed remote changes
+        // since the last shutdown). A push-first-then-pull ordering can
+        // resurrect items the user deleted remotely, or overwrite fields the
+        // user just edited on another device. Pull-only converges safely —
+        // subsequent user edits will push through the normal per-mutation
+        // syncPush path.
+        if UserDefaults.standard.bool(forKey: "remindersSyncEnabled"),
+           RemindersSync.shared.isAuthorized {
+            RemindersSync.shared.startObserving()
+            let syncedLists = Store.shared.lists.filter { $0.remindersCalendarId != nil }
+            if !syncedLists.isEmpty {
+                RemindersSync.shared.pullChanges(for: syncedLists)
+            }
+        }
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        // Explicitly tear down anything that outlives the app object under
+        // normal ARC rules — timers hold strong references, and event
+        // monitors are owned by AppKit until removed.
+        badgeTimer?.invalidate()
+        badgeTimer = nil
+        stopEventMonitor()
+        unregisterHotkey()
+        RemindersSync.shared.stopObserving()
     }
 
     // MARK: - Setup
@@ -246,6 +278,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     }
 
     private func startEventMonitor() {
+        // Guard against double-registration — `togglePopover()` could be
+        // called while the popover is still animating from a previous open,
+        // and every unremoved monitor keeps firing indefinitely.
+        if eventMonitor != nil { return }
         eventMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
             // Only close if our app lost focus (click went to another app, not a system panel like emoji picker)
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {

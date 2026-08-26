@@ -78,12 +78,21 @@ struct DateParser {
             }
         }
 
-        // Bare weekday: "monday", "friday 3pm"
+        // Bare weekday: "monday" (default 9am), or weekday + suffix such as
+        // "friday 3pm" or "friday noon". A weekday with an EMPTY suffix
+        // returns the weekday's default 9am; a weekday with a NON-EMPTY but
+        // malformed suffix (e.g. "friday abc", "friday 25pm", "friday 9:99")
+        // returns nil rather than silently falling back to 9am — otherwise
+        // typos would land tasks on the wrong time without the user
+        // realising the suffix was ignored.
         let firstWord = String(text.split(separator: " ").first ?? "")
         if let weekday = weekdayNumber(firstWord) {
             let base = nextWeekday(weekday, after: now) ?? now
-            let timeStr = text.replacingOccurrences(of: firstWord, with: "")
-            return applyTime(timeStr, to: base) ?? base
+            let timeStr = text
+                .replacingOccurrences(of: firstWord, with: "")
+                .trimmingCharacters(in: .whitespaces)
+            if timeStr.isEmpty { return base }          // bare weekday → default 9am
+            return applyTime(timeStr, to: base)          // malformed suffix → nil
         }
 
         // Try Apple's DataDetector as fallback (use the normalized text so
@@ -115,24 +124,63 @@ struct DateParser {
         if text.isEmpty { return nil }
 
         let calendar = Calendar.current
+
+        // Time-of-day keyword shortcuts (e.g. "friday noon", "monday morning").
+        // Matched after normalising whitespace but before numeric parsing so
+        // e.g. "friday eod" doesn't fall through to the "reject malformed"
+        // path below.
+        let keyword = text.replacingOccurrences(of: " ", with: "")
+        switch keyword {
+        case "noon":                              return calendar.date(bySettingHour: 12, minute: 0, second: 0, of: date)
+        case "midnight":                          return calendar.date(bySettingHour: 0, minute: 0, second: 0, of: date)
+        case "morning", "thismorning":            return calendar.date(bySettingHour: 9, minute: 0, second: 0, of: date)
+        case "afternoon", "thisafternoon":        return calendar.date(bySettingHour: 14, minute: 0, second: 0, of: date)
+        case "evening", "thisevening":            return calendar.date(bySettingHour: 18, minute: 0, second: 0, of: date)
+        case "tonight":                           return calendar.date(bySettingHour: 21, minute: 0, second: 0, of: date)
+        case "eod", "endofday":                   return calendar.date(bySettingHour: 17, minute: 0, second: 0, of: date)
+        default: break
+        }
+
         // Match patterns like "3pm", "3:30pm", "15:00", "3 pm"
-        let cleaned = text.replacingOccurrences(of: " ", with: "")
+        let cleaned = keyword
+
+        // The suffix drives the AM/PM adjustment; strip it before parsing digits.
+        let hasPM = cleaned.hasSuffix("pm")
+        let hasAM = cleaned.hasSuffix("am")
+        var digits = cleaned
+        if hasPM { digits.removeLast(2) }
+        else if hasAM { digits.removeLast(2) }
+
+        // Digits + optional ":". Any other character means malformed input —
+        // treat it as unparseable instead of silently returning midnight.
+        let allowed: Set<Character> = Set("0123456789:")
+        guard !digits.isEmpty, digits.allSatisfy({ allowed.contains($0) }) else { return nil }
 
         var hour = 0
         var minute = 0
 
-        if cleaned.contains(":") {
-            let parts = cleaned.replacingOccurrences(of: "am", with: "").replacingOccurrences(of: "pm", with: "").split(separator: ":")
-            if parts.count == 2, let h = Int(parts[0]), let m = Int(parts[1]) {
-                hour = h; minute = m
-            }
+        if digits.contains(":") {
+            let parts = digits.split(separator: ":", omittingEmptySubsequences: false)
+            guard parts.count == 2,
+                  let h = Int(parts[0]),
+                  let m = Int(parts[1]) else { return nil }
+            hour = h; minute = m
         } else {
-            let digits = cleaned.replacingOccurrences(of: "am", with: "").replacingOccurrences(of: "pm", with: "")
-            if let h = Int(digits) { hour = h }
+            guard let h = Int(digits) else { return nil }
+            hour = h
         }
 
-        if cleaned.contains("pm") && hour < 12 { hour += 12 }
-        if cleaned.contains("am") && hour == 12 { hour = 0 }
+        // Range validation — anything outside a valid clock time is malformed.
+        // Allow 0..23 for 24-hour and 1..12 combined with am/pm.
+        if hasAM || hasPM {
+            guard (1...12).contains(hour) else { return nil }
+        } else {
+            guard (0...23).contains(hour) else { return nil }
+        }
+        guard (0...59).contains(minute) else { return nil }
+
+        if hasPM && hour < 12 { hour += 12 }
+        if hasAM && hour == 12 { hour = 0 }
 
         return calendar.date(bySettingHour: hour, minute: minute, second: 0, of: date)
     }

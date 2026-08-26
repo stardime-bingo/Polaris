@@ -58,11 +58,49 @@ func testDateParser() {
     if let fri = DateParser.parse("friday") {
         expectEqual(cal.component(.weekday, from: fri), 6, "friday is weekday 6")
         expect(fri > Date(), "bare weekday is in the future")
+        expectEqual(cal.component(.hour, from: fri), 9, "bare weekday defaults to 9am")
+        expectEqual(cal.component(.minute, from: fri), 0, "bare weekday defaults to :00")
     } else { expect(false, "friday should parse") }
 
     if let mon = DateParser.parse("next monday") {
         expectEqual(cal.component(.weekday, from: mon), 2, "next monday is weekday 2")
     } else { expect(false, "next monday should parse") }
+
+    // "friday noon" → the applyTime keyword shortcut must resolve to friday
+    // at 12:00, not fall through to the malformed-numeric path.
+    if let fnoon = DateParser.parse("friday noon") {
+        expectEqual(cal.component(.weekday, from: fnoon), 6, "friday noon is on friday")
+        expectEqual(cal.component(.hour, from: fnoon), 12, "friday noon is hour 12")
+        expectEqual(cal.component(.minute, from: fnoon), 0, "friday noon is minute 0")
+    } else { expect(false, "friday noon should parse") }
+
+    // Other applyTime keywords
+    if let feod = DateParser.parse("friday eod") {
+        expectEqual(cal.component(.hour, from: feod), 17, "friday eod is hour 17")
+    } else { expect(false, "friday eod should parse") }
+
+    if let ttonight = DateParser.parse("tomorrow tonight") {
+        expectEqual(cal.component(.hour, from: ttonight), 21, "tomorrow tonight is hour 21")
+    } else { expect(false, "tomorrow tonight should parse") }
+
+    if let mmorning = DateParser.parse("monday morning") {
+        expectEqual(cal.component(.hour, from: mmorning), 9, "monday morning is hour 9")
+    } else { expect(false, "monday morning should parse") }
+
+    if let taft = DateParser.parse("tomorrow afternoon") {
+        expectEqual(cal.component(.hour, from: taft), 14, "tomorrow afternoon is hour 14")
+    } else { expect(false, "tomorrow afternoon should parse") }
+
+    // Malformed weekday suffix must return nil rather than silently falling
+    // back to the weekday's default 9am — otherwise typos like `friday abc`
+    // or out-of-range times like `friday 25pm` / `friday 9:99` would land
+    // tasks on a date the user didn't intend without any signal.
+    expect(DateParser.parse("friday abc") == nil,
+           "friday + malformed suffix returns nil (not friday 9am)")
+    expect(DateParser.parse("friday 25pm") == nil,
+           "friday + out-of-range hour returns nil (not friday 9am)")
+    expect(DateParser.parse("friday 9:99") == nil,
+           "friday + out-of-range minute returns nil (not friday 9am)")
 }
 
 // MARK: - Recurrence
@@ -86,6 +124,20 @@ func testRecurrence() {
     // endDate cutoff: next occurrence is beyond the end date → nil
     let capped = Recurrence(frequency: .weekly, interval: 1, endDate: cal.date(byAdding: .day, value: 3, to: base))
     expect(capped.nextDueDate(from: base) == nil, "recurrence past endDate → nil")
+
+    // Interval must clamp to >= 1 — otherwise a zero/negative interval would
+    // spawn an identical date forever (or move backwards in time), turning a
+    // recurring task into a soft infinite loop after each completion.
+    let zero = Recurrence(frequency: .daily, interval: 0, endDate: nil)
+    expectEqual(zero.nextDueDate(from: base), cal.date(byAdding: .day, value: 1, to: base),
+                "daily/0 clamps to +1 day (not zero)")
+    let negative = Recurrence(frequency: .weekly, interval: -3, endDate: nil)
+    expectEqual(negative.nextDueDate(from: base), cal.date(byAdding: .day, value: 7, to: base),
+                "weekly/-3 clamps to +1 week (not backwards)")
+    let negMonth = Recurrence(frequency: .monthly, interval: -1, endDate: nil)
+    if let n = negMonth.nextDueDate(from: base) {
+        expect(n > base, "monthly/-1 clamps forward (never before base)")
+    } else { expect(false, "monthly/-1 should still produce a date") }
 }
 
 // MARK: - DueDateFormatter
@@ -226,6 +278,32 @@ func testTodoItemCodable() {
         expect(old.dueDate == nil, "missing dueDate decodes as nil")
     } catch {
         expect(false, "minimal legacy payload should decode: \(error)")
+    }
+
+    // Even-more-legacy payload that OMITS notes entirely — historically this
+    // failed to decode, forcing the store to drop the task on load.
+    let noNotes = """
+    {"id":"\(UUID().uuidString)","title":"Bare","createdAt":0,"priorityRaw":0,"reminderOffsetRaw":0}
+    """.data(using: .utf8)!
+    do {
+        let decoded = try JSONDecoder().decode(TodoItem.self, from: noNotes)
+        expectEqual(decoded.notes, "", "missing notes defaults to empty string")
+        expectEqual(decoded.title, "Bare", "title still decoded when notes missing")
+    } catch {
+        expect(false, "legacy TodoItem without notes must decode: \(error)")
+    }
+
+    // Even the title can be missing on the oldest exports — decode must not
+    // fail; we fall back to "Untitled" (not empty) so the row remains
+    // visible and selectable in the UI.
+    let noTitle = """
+    {"id":"\(UUID().uuidString)","notes":"","createdAt":0,"priorityRaw":1,"reminderOffsetRaw":3}
+    """.data(using: .utf8)!
+    do {
+        let decoded = try JSONDecoder().decode(TodoItem.self, from: noTitle)
+        expectEqual(decoded.title, "Untitled", "missing title defaults to 'Untitled'")
+    } catch {
+        expect(false, "legacy TodoItem without title must decode: \(error)")
     }
 }
 

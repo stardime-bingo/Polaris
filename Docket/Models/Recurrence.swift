@@ -44,13 +44,19 @@ struct Recurrence: Codable, Hashable {
     var endDate: Date?
 
     /// Calculate the next due date from a given date.
+    ///
+    /// `interval` is clamped to `>= 1` before applying, so persisted or
+    /// user-supplied zero/negative intervals can't produce an unchanged date
+    /// (which would spawn an identical recurrence forever) or move backwards
+    /// in time.
     func nextDueDate(from date: Date) -> Date? {
         let calendar = Calendar.current
+        let step = max(1, interval)
         let next: Date?
         switch frequency {
-        case .daily:   next = calendar.date(byAdding: .day, value: interval, to: date)
-        case .weekly:  next = calendar.date(byAdding: .day, value: 7 * interval, to: date)
-        case .monthly: next = calendar.date(byAdding: .month, value: interval, to: date)
+        case .daily:   next = calendar.date(byAdding: .day, value: step, to: date)
+        case .weekly:  next = calendar.date(byAdding: .day, value: 7 * step, to: date)
+        case .monthly: next = calendar.date(byAdding: .month, value: step, to: date)
         }
         if let end = endDate, let n = next, n > end { return nil }
         return next

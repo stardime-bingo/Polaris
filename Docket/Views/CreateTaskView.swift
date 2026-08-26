@@ -113,7 +113,7 @@ struct CreateTaskView: View {
         ZStack {
             Text(L10n.newTask).font(.headline)
             HStack {
-                Button { path.removeLast() } label: {
+                Button { if !path.isEmpty { path.removeLast() } } label: {
                     Image(systemName: "xmark")
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(.secondary)
@@ -122,23 +122,17 @@ struct CreateTaskView: View {
                 }.buttonStyle(.plain)
                 Spacer()
                 Button {
-                    Store.shared.add(TodoItem(
-                        title: title, notes: notes, priority: priority,
-                        dueDate: hasDueDate ? dueDate : nil, reminderOffset: reminderOffset,
-                        labelIds: selectedLabelIds,
-                        recurrence: hasDueDate && hasRecurrence ? Recurrence(frequency: recurrenceFreq, interval: recurrenceInterval, endDate: nil) : nil
-                    ))
-                    path.removeLast()
+                    submitNewTask()
                 } label: {
                     Text(L10n.addTask)
                         .font(.subheadline.weight(.semibold))
                         .padding(.horizontal, 14)
                         .padding(.vertical, 7)
-                        .background(Capsule().fill(title.isEmpty ? Color.gray.opacity(0.3) : accent))
-                        .foregroundStyle(title.isEmpty ? Color.gray : Color.white)
+                        .background(Capsule().fill(trimmedTitle.isEmpty ? Color.gray.opacity(0.3) : accent))
+                        .foregroundStyle(trimmedTitle.isEmpty ? Color.gray : Color.white)
                 }
                 .buttonStyle(.plain)
-                .disabled(title.isEmpty)
+                .disabled(trimmedTitle.isEmpty)
             }
         }
         .padding(.horizontal, 16)
@@ -146,6 +140,35 @@ struct CreateTaskView: View {
     }
 
     // MARK: - Helpers
+
+    private var trimmedTitle: String {
+        title.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func submitNewTask() {
+        let cleanTitle = trimmedTitle
+        // Cheap client-side guard against whitespace-only submissions — the
+        // button is disabled but ⏎ (from TextField.onSubmit or the framework
+        // "default" action) can still fire the action.
+        guard !cleanTitle.isEmpty else { return }
+        // Construct mutably so we can carry over the selected matrix
+        // quadrant — TodoItem's initializer doesn't take a `quadrant:`
+        // argument (it defaults to nil), so writing the field after
+        // construction is the only path that doesn't silently drop the
+        // user's picker choice.
+        var newItem = TodoItem(
+            title: cleanTitle,
+            notes: notes,
+            priority: priority,
+            dueDate: hasDueDate ? dueDate : nil,
+            reminderOffset: reminderOffset,
+            labelIds: selectedLabelIds,
+            recurrence: hasDueDate && hasRecurrence ? Recurrence(frequency: recurrenceFreq, interval: recurrenceInterval, endDate: nil) : nil
+        )
+        newItem.quadrant = selectedQuadrant
+        Store.shared.add(newItem)
+        if !path.isEmpty { path.removeLast() }
+    }
 
     private func parseNaturalDate() {
         if let date = DateParser.parse(naturalDateText) {

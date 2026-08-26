@@ -81,13 +81,19 @@ struct TodoItem: Identifiable, Codable, Hashable {
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(UUID.self, forKey: .id)
-        title = try c.decode(String.self, forKey: .title)
-        notes = try c.decode(String.self, forKey: .notes)
-        createdAt = try c.decode(Date.self, forKey: .createdAt)
+        // Legacy payloads may omit `title` (early exports) or `notes`.
+        // Fall back to safe defaults rather than failing to decode the whole
+        // task — losing metadata is worse than losing a title we can't recover.
+        // The title fallback is "Untitled" (not empty) so a decoded row is
+        // always identifiable in the UI; an empty title otherwise renders as
+        // an invisible row that the user can't select or edit.
+        title = try c.decodeIfPresent(String.self, forKey: .title) ?? "Untitled"
+        notes = try c.decodeIfPresent(String.self, forKey: .notes) ?? ""
+        createdAt = try c.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
         completedAt = try c.decodeIfPresent(Date.self, forKey: .completedAt)
-        priorityRaw = try c.decode(Int.self, forKey: .priorityRaw)
+        priorityRaw = try c.decodeIfPresent(Int.self, forKey: .priorityRaw) ?? Priority.medium.rawValue
         dueDate = try c.decodeIfPresent(Date.self, forKey: .dueDate)
-        reminderOffsetRaw = try c.decode(Int.self, forKey: .reminderOffsetRaw)
+        reminderOffsetRaw = try c.decodeIfPresent(Int.self, forKey: .reminderOffsetRaw) ?? ReminderOffset.tenMinutes.rawValue
         sortOrder = try c.decodeIfPresent(Int.self, forKey: .sortOrder) ?? 0
         listId = try c.decodeIfPresent(UUID.self, forKey: .listId)
         labelIds = try c.decodeIfPresent([UUID].self, forKey: .labelIds) ?? []

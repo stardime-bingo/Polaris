@@ -17,12 +17,32 @@ final class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
         center.delegate = self
     }
 
+    /// Request notification permission and, once the user answers, reconcile
+    /// scheduled reminders against the current Store. Any arbitrary launch
+    /// delay is removed — the system already presents the permission prompt
+    /// out-of-line, so gating it behind a timer only invited authorization
+    /// races where a task added on launch would be added *before* we asked
+    /// and therefore never scheduled.
     func requestPermission() {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [self] in
-            center.requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
-                if let error { self.logger.error("Auth error: \(error.localizedDescription)") }
-                if !granted { self.logger.warning("Permission denied") }
+        center.requestAuthorization(options: [.alert, .sound, .badge]) { [weak self] granted, error in
+            guard let self else { return }
+            if let error { self.logger.error("Auth error: \(error.localizedDescription)") }
+            if !granted {
+                self.logger.warning("Permission denied")
+                return
             }
+            // Reconcile: without this, tasks created before the user granted
+            // permission would have silently failed to schedule.
+            DispatchQueue.main.async { self.reconcileFromStore() }
+        }
+    }
+
+    /// (Re-)schedule notifications for every uncompleted task in the Store.
+    /// Safe to call repeatedly — `scheduleReminder(for:)` cancels any prior
+    /// pending request for the same task id before adding a new one.
+    func reconcileFromStore() {
+        for item in Store.shared.items where !item.isCompleted {
+            scheduleReminder(for: item)
         }
     }
 
@@ -34,7 +54,8 @@ final class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
               item.completedAt == nil else { return }
 
         let fireDate = dueDate.addingTimeInterval(-item.reminderOffset.timeInterval)
-        guard fireDate > Date() else { return }
+        let interval = fireDate.timeIntervalSinceNow
+        guard interval > 0 else { return }
 
         let content = UNMutableNotificationContent()
         content.title = L10n.appName
@@ -49,10 +70,11 @@ final class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
         default: content.sound = UNNotificationSound(named: UNNotificationSoundName(rawValue: "\(soundPref).aiff"))
         }
 
-        let components = Calendar.current.dateComponents(
-            [.year, .month, .day, .hour, .minute, .second], from: fireDate
-        )
-        let trigger = UNCalendarNotificationTrigger(dateMatching: components, repeats: false)
+        // Absolute-duration trigger — resilient to timezone shifts, DST
+        // transitions, and system-clock adjustments. A calendar trigger with
+        // fixed components would re-fire (or move) if the system entered a
+        // different zone/offset between scheduling and firing time.
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: interval, repeats: false)
         let request = UNNotificationRequest(identifier: item.id.uuidString, content: content, trigger: trigger)
         center.add(request) { error in
             if let error { self.logger.error("Schedule failed: \(error.localizedDescription)") }

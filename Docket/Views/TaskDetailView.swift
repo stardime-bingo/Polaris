@@ -127,7 +127,7 @@ struct TaskDetailView: View {
                     // Delete
                     Button {
                         Store.shared.delete(item)
-                        path.removeLast()
+                        if !path.isEmpty { path.removeLast() }
                     } label: {
                         Text(L10n.deleteTask)
                             .font(.subheadline.weight(.medium))
@@ -172,20 +172,35 @@ struct TaskDetailView: View {
     }
 
     private func confirmEdit() {
+        // Trim and reject a title that would render as empty. Cheaper than
+        // failing at the store layer and keeps the user in-context with the
+        // (unsaved) edits visible.
+        let trimmed = item.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        item.title = trimmed
         item.recurrence = hasDueDate && hasRecurrence ? Recurrence(frequency: recurrenceFreq, interval: recurrenceInterval, endDate: nil) : nil
+
+        // Skip a no-op update — spares Reminders sync a round trip and
+        // avoids re-scheduling identical notifications.
+        if let original = originalItem, original == item {
+            if !path.isEmpty { path.removeLast() }
+            return
+        }
+
+        // Moving between lists is handled entirely by Store.update — it
+        // cleans up labels that don't belong to the destination list and
+        // assigns a collision-free sortOrder. No pre-work needed here.
         Store.shared.update(item)
-        path.removeLast()
+        if !path.isEmpty { path.removeLast() }
     }
 
     private func cancelEdit() {
-        // Only restore if the user actually changed something. The store still
-        // holds the original during editing, so an unchanged cancel needs no
-        // write (which would otherwise reschedule notifications and re-push to
-        // Reminders for nothing).
-        if let original = originalItem, original != item {
-            Store.shared.update(original)
-        }
-        path.removeLast()
+        // Cancel means *discard*: do not write the original back. The store
+        // was never mutated during editing (this view holds a local `@State`
+        // copy), so simply dropping our copy is correct — writing the
+        // original would needlessly reschedule notifications and re-push to
+        // Reminders when the user explicitly asked to abandon changes.
+        if !path.isEmpty { path.removeLast() }
     }
 
     private func parseNaturalDate() {

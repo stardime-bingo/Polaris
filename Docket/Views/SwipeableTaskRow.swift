@@ -78,11 +78,22 @@ struct SwipeableTaskRow: View {
                 startPressFeedback()
             } else {
                 // Gesture ended/cancelled in any way → ensure cleanup runs even if
-                // the sequenced gesture's .onEnded didn't fire.
+                // the sequenced gesture's .onEnded didn't fire. Only signal the
+                // owner once per gesture — the .onEnded handler also calls
+                // `onReorderEnd`, and if BOTH fired the list would try to apply
+                // the drag order twice and momentarily jitter.
                 cancelPressFeedback()
-                reorderBegun = false
-                onReorderEnd()
+                if reorderBegun {
+                    reorderBegun = false
+                    onReorderEnd()
+                }
             }
+        }
+        .onDisappear {
+            // If the row is removed mid-press (e.g. the list re-renders because
+            // it was completed via the swipe), the pending timer would still
+            // fire and briefly grow a nonexistent row.
+            cancelPressFeedback()
         }
     }
 
@@ -121,11 +132,15 @@ struct SwipeableTaskRow: View {
                 if value.translation.width > threshold {
                     withAnimation(.spring(duration: 0.3)) { offset = 400 }
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { onComplete() }
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { offset = 0 }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                        withAnimation(.easeOut(duration: 0.2)) { offset = 0 }
+                    }
                 } else if value.translation.width < -threshold {
                     withAnimation(.spring(duration: 0.3)) { offset = -400 }
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { onDelete() }
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { offset = 0 }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                        withAnimation(.easeOut(duration: 0.2)) { offset = 0 }
+                    }
                 } else {
                     withAnimation(.spring(duration: 0.25)) { offset = 0 }
                 }
@@ -151,8 +166,14 @@ struct SwipeableTaskRow: View {
                 }
             }
             .onEnded { _ in
-                reorderBegun = false
-                onReorderEnd()
+                // Only forward one termination signal — the `reorderActive`
+                // watchdog also fires when the gesture goes inactive. If both
+                // paths sent `onReorderEnd`, the owner would apply the drag
+                // order twice.
+                if reorderBegun {
+                    reorderBegun = false
+                    onReorderEnd()
+                }
             }
     }
 }

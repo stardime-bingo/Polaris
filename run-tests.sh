@@ -28,10 +28,15 @@ swiftc \
     "$SRC/Models/IconPalette.swift" \
     "$SRC/Models/TaskLabel.swift" \
     "$SRC/Models/TaskList.swift" \
+    "$SRC/Models/NavDestination.swift" \
+    "$SRC/Models/GoalPeriod.swift" \
+    "$SRC/Services/GoalBoardRules.swift" \
     "$SRC/Models/TodoItem.swift" \
     "$SRC/Models/MatrixLayout.swift" \
     "$SRC/Models/Strings.swift" \
     "$SRC/Services/DateParser.swift" \
+    "$SRC/Services/GoalDateParser.swift" \
+    "$SRC/Services/GoalImportPlan.swift" \
     "$SRC/Services/DueDateFormatter.swift" \
     "$SCRIPT_DIR/tests/main.swift"
 

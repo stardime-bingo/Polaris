@@ -39,6 +39,8 @@ struct ColorSwatchButton: View {
     var body: some View {
         Button { showPicker.toggle() } label: {
             swatch(size: size, ringColor: ringColor, hovered: hovered)
+                .frame(minWidth: 28, minHeight: 28)
+                .contentShape(Rectangle())
         }
         .buttonStyle(PressableScaleStyle())
         .onHover { hovered = $0 }
@@ -57,6 +59,7 @@ struct ColorSwatchButton: View {
             .padding(12)
             .frame(width: 240)
         }
+        .polarisPickerEscape(isPresented: $showPicker)
         .onChange(of: showPicker) { _, newValue in
             onPopoverChange?(newValue)
         }

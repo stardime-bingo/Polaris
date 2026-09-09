@@ -62,7 +62,8 @@ struct SwipeableTaskRow: View {
                     }
             }
 
-            TaskRowView(item: item, onComplete: onComplete)
+            TaskRowView(item: item, onComplete: onComplete,
+                onToggleStep: { Store.shared.toggleStep(goalID: item.id, stepID: $0) })
                 .scaleEffect(pressed && !isLifted ? 1.03 : 1.0)
                 .offset(x: offset)
                 .contentShape(Rectangle())

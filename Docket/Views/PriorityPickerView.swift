@@ -1,32 +1,15 @@
-// PriorityPickerView.swift
-// Docket — macOS Menu Bar Task Manager
-// Created by @santoru
-
 import SwiftUI
 
-/// A themed priority picker with colored pill buttons.
 struct PriorityPickerView: View {
     @Binding var priority: Priority
-
+    @Environment(\.polarisPalette) private var palette
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(L10n.priority).font(.subheadline.weight(.medium)).foregroundStyle(.secondary)
-            HStack(spacing: 8) {
-                ForEach(Priority.allCases) { p in
-                    Button { withAnimation(.easeInOut(duration: 0.15)) { priority = p } } label: {
-                        Text(p.displayName)
-                            .font(.subheadline.weight(priority == p ? .semibold : .regular))
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 7)
-                            .background(
-                                Capsule().fill(priority == p ? p.color : .clear)
-                            )
-                            .foregroundStyle(priority == p ? .white : .secondary)
-                            .overlay(Capsule().stroke(priority == p ? Color.clear : Color.gray.opacity(0.3), lineWidth: 1))
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-        }
+        HStack(spacing: 12) {
+            Text("优先级").font(.system(size: 12.5)).foregroundStyle(palette.secondary).frame(width: 52, alignment: .leading)
+            Spacer(minLength: 0)
+            Picker("优先级", selection: $priority) {
+                ForEach(Priority.allCases) { Text($0.displayName).tag($0) }
+            }.labelsHidden().pickerStyle(.segmented).controlSize(.small)
+        }.frame(minHeight: 36)
     }
 }

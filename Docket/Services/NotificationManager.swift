@@ -10,7 +10,7 @@ import os
 final class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
     static let shared = NotificationManager()
     private let center = UNUserNotificationCenter.current()
-    private let logger = Logger(subsystem: "blog.insecurity.docket", category: "notifications")
+    private let logger = Logger(subsystem: "com.bingowu.polaris", category: "notifications")
 
     override init() {
         super.init()
@@ -24,6 +24,7 @@ final class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
     /// races where a task added on launch would be added *before* we asked
     /// and therefore never scheduled.
     func requestPermission() {
+        guard !DocketRuntime.isPreview else { return }
         center.requestAuthorization(options: [.alert, .sound, .badge]) { [weak self] granted, error in
             guard let self else { return }
             if let error { self.logger.error("Auth error: \(error.localizedDescription)") }
@@ -47,13 +48,15 @@ final class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
     }
 
     func scheduleReminder(for item: TodoItem) {
+        guard !DocketRuntime.isPreview else { return }
         cancelReminder(for: item)
 
         guard let dueDate = item.dueDate,
               item.reminderOffset != .none,
               item.completedAt == nil else { return }
 
-        let fireDate = dueDate.addingTimeInterval(-item.reminderOffset.timeInterval)
+        let anchor = item.hasDueTime ? dueDate : Calendar.current.date(bySettingHour: 9, minute: 0, second: 0, of: dueDate)!
+        let fireDate = anchor.addingTimeInterval(-item.reminderOffset.timeInterval)
         let interval = fireDate.timeIntervalSinceNow
         guard interval > 0 else { return }
 

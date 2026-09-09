@@ -13,9 +13,9 @@ final class Store {
 
     /// Current on-disk data schema version. Bump when the persisted shape
     /// changes and add a corresponding migration step in `migrateIfNeeded()`.
-    static let currentSchemaVersion = 1
+    static let currentSchemaVersion = 2
 
-    @ObservationIgnored private let logger = Logger(subsystem: "blog.insecurity.docket", category: "store")
+    @ObservationIgnored private let logger = Logger(subsystem: "com.bingowu.polaris", category: "store")
 
     var items: [TodoItem] = []
     var lists: [TaskList] = []
@@ -23,12 +23,12 @@ final class Store {
     var activeListId: UUID
     var activeLabelFilter: UUID?
 
-    private let dir: URL = {
-        let d = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Docket", isDirectory: true)
-        try? FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)
-        return d
-    }()
+    @ObservationIgnored private let dir: URL
+    @ObservationIgnored private let defaults: UserDefaults
+    @ObservationIgnored private let performsSideEffects: Bool
+    @ObservationIgnored var remindersSyncOverride: RemindersSync?
+    var lastPersistenceError: String?
+    private(set) var pendingReminderDeletions: [TodoItem] = []
 
     private var tasksURL: URL { dir.appendingPathComponent("tasks.json") }
     private var listsURL: URL { dir.appendingPathComponent("lists.json") }
@@ -43,11 +43,20 @@ final class Store {
     private var listsWritable = true
     private var labelsWritable = true
 
-    init() {
+    init(directory: URL? = nil, defaults: UserDefaults = .standard, performsSideEffects: Bool = true) {
+        self.defaults = defaults
+        self.performsSideEffects = performsSideEffects
+        dir = directory ?? DocketRuntime.previewDirectory ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Polaris", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         activeListId = UUID()
         loadLists()
         loadLabels()
         loadTasks()
+        let deletionURL = dir.appendingPathComponent("pending-reminder-deletions.json")
+        if FileManager.default.fileExists(atPath: deletionURL.path) {
+            do { pendingReminderDeletions = try JSONDecoder().decode([TodoItem].self, from: Data(contentsOf: deletionURL)) }
+            catch { lastPersistenceError = "读取待同步删除失败：\(error.localizedDescription)" }
+        }
         // Invariant: there is always at least one list, and exactly one default.
         if lists.isEmpty {
             lists = [TaskList(name: "Default", isDefault: true)]
@@ -58,23 +67,23 @@ final class Store {
         // actually changed something, persist so the healed state survives a
         // crash before the next mutation.
         if reassignOrphans() { saveTasks() }
-        activeListId = UUID(uuidString: UserDefaults.standard.string(forKey: "activeListId") ?? "") ?? defaultId
+        activeListId = UUID(uuidString: defaults.string(forKey: "activeListId") ?? "") ?? defaultId
         migrateIfNeeded()
     }
 
     // MARK: - Schema Migration
 
     /// Runs any pending data migrations and records the current schema version.
-    /// Currently a no-op scaffold (we're at v1); future schema changes add
-    /// sequential migration steps here.
+    /// v2 adds local goal steps and the explicit weekly period. Legacy tasks
+    /// decode with an empty step list; existing month/year periods stay unchanged.
     private func migrateIfNeeded() {
-        let stored = UserDefaults.standard.object(forKey: "dataSchemaVersion") as? Int ?? 0
+        let stored = defaults.object(forKey: "dataSchemaVersion") as? Int ?? 0
         guard stored < Store.currentSchemaVersion else { return }
         // switch stored {
         // case 0: migrateV0toV1(); fallthrough
         // default: break
         // }
-        UserDefaults.standard.set(Store.currentSchemaVersion, forKey: "dataSchemaVersion")
+        defaults.set(Store.currentSchemaVersion, forKey: "dataSchemaVersion")
         logger.info("Migrated data schema \(stored) → \(Store.currentSchemaVersion)")
     }
 
@@ -94,10 +103,7 @@ final class Store {
         // Deterministic order: primary by sortOrder, secondary by createdAt
         // (stable across launches even when two rows share a sortOrder — which
         // can happen after imports or interrupted reorders).
-        return tasks.sorted { a, b in
-            if a.sortOrder != b.sortOrder { return a.sortOrder < b.sortOrder }
-            return a.createdAt < b.createdAt
-        }
+        return GoalBoardRules.ordered(tasks)
     }
 
     var completedTasks: [TodoItem] {
@@ -118,7 +124,7 @@ final class Store {
     /// in the app.
     var badgeCount: Int {
         let endOfToday = Calendar.current.date(byAdding: .day, value: 1, to: Calendar.current.startOfDay(for: Date()))!
-        let allLists = UserDefaults.standard.bool(forKey: "badgeAllLists")
+        let allLists = defaults.bool(forKey: "badgeAllLists")
         return items.filter {
             !$0.isCompleted &&
             (allLists || $0.listId == activeListId) &&
@@ -136,8 +142,8 @@ final class Store {
         let now = Date()
         let endOfToday = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: now))!
 
-        let overdue = active.filter { $0.dueDate != nil && $0.dueDate! < now }.sorted { $0.dueDate! < $1.dueDate! }
-        let today = active.filter { $0.dueDate != nil && $0.dueDate! >= now && $0.dueDate! < endOfToday }.sorted { $0.dueDate! < $1.dueDate! }
+        let overdue = active.filter { $0.dueDate != nil && $0.isOverdue(at: now) }.sorted { $0.dueDate! < $1.dueDate! }
+        let today = active.filter { $0.dueDate != nil && !$0.isOverdue(at: now) && $0.dueDate! < endOfToday }.sorted { $0.dueDate! < $1.dueDate! }
         let upcoming = active.filter { $0.dueDate != nil && $0.dueDate! >= endOfToday }.sorted { $0.dueDate! < $1.dueDate! }
         let noDate = active.filter { $0.dueDate == nil }.sorted { a, b in
             if a.sortOrder != b.sortOrder { return a.sortOrder < b.sortOrder }
@@ -177,7 +183,7 @@ final class Store {
     func switchList(_ list: TaskList) {
         activeListId = list.id
         activeLabelFilter = nil
-        UserDefaults.standard.set(list.id.uuidString, forKey: "activeListId")
+        defaults.set(list.id.uuidString, forKey: "activeListId")
     }
 
     // MARK: - Labels
@@ -188,144 +194,88 @@ final class Store {
 
     func addLabel(name: String, colorHex: String, icon: String) {
         let label = TaskLabel(name: name, colorHex: colorHex, icon: icon, listId: activeListId)
+        let before = labels
         labels.append(label)
-        saveLabels()
+        if !saveLabels() { labels = before }
     }
 
     func updateLabel(_ label: TaskLabel) {
         guard let i = labels.firstIndex(where: { $0.id == label.id }) else { return }
+        let before = labels
         labels[i] = label
-        saveLabels()
+        if !saveLabels() { labels = before }
     }
 
     func deleteLabel(_ label: TaskLabel) {
+        let oldItems = items, oldLabels = labels
         // Remove from all tasks
         for i in items.indices {
             items[i].labelIds.removeAll { $0 == label.id }
         }
         labels.removeAll { $0.id == label.id }
+        guard persistAll() else { items = oldItems; labels = oldLabels; return }
         if activeLabelFilter == label.id { activeLabelFilter = nil }
-        saveLabels()
-        saveTasks()
     }
 
     func addList(name: String) {
         let list = TaskList(name: name)
+        let before = lists
         lists.append(list)
-        saveLists()
+        if !saveLists() { lists = before }
     }
 
     func renameList(_ list: TaskList, to name: String) {
         guard let i = lists.firstIndex(where: { $0.id == list.id }) else { return }
+        let before = lists
         lists[i].name = name
-        saveLists()
+        if !saveLists() { lists = before }
     }
 
     func deleteList(_ list: TaskList) {
-        guard !list.isDefault else { return }
-        guard let defaultId = lists.first(where: { $0.isDefault })?.id else { return }
-        // Collect the ids of labels owned by the list being deleted. Labels
-        // are per-list, so these become orphans the moment the list goes
-        // away — they'd remain in labels.json referenced by moved tasks but
-        // hidden from every label picker (which filters by activeListId).
-        let doomedLabelIds = Set(labels.filter { $0.listId == list.id }.map(\.id))
-
-        // Snapshot the tasks in the doomed list BEFORE any mutation. Two
-        // reasons: (1) each snapshot still carries the pre-move reminderId,
-        // which is what EventKit needs to delete the reminder in the *old*
-        // calendar; (2) freezing membership up front means the mutation
-        // loop below only touches existing rows (no append/remove), so
-        // `items.indices` stays stable for its whole traversal.
-        let doomedTaskSnapshots = items.filter { $0.listId == list.id }
-        let doomedIds = Set(doomedTaskSnapshots.map(\.id))
-
-        // Enqueue deletion of the corresponding EventKit reminders using
-        // the snapshotted reminderIds. RemindersSync copies `rid` out of
-        // the item before hopping to its serial queue, so it's safe to
-        // then wipe the local reminderId in the mutation loop below — the
-        // async delete still sees the correct old identifier. If we
-        // instead let the moved task retain the doomed reminderId, a
-        // later pull of the default list's calendar would see that id
-        // absent and delete the moved local task (the very bug we're
-        // fixing).
-        for snap in doomedTaskSnapshots where snap.reminderId != nil {
-            RemindersSync.shared.deleteReminder(for: snap)
-        }
-
-        // Compute a collision-free block of sortOrders at the tail of the
-        // default list and assign it deterministically to the moved
-        // *active* tasks. We deliberately use `maxSortOrder(inListId:)`
-        // (not `activeTasks`) so the result is independent of whichever
-        // list/label filter the user happens to be viewing. Completed
-        // tasks aren't reordered — they're grouped by completedAt in the
-        // UI, and their sortOrder is irrelevant there.
-        let baseSortOrder = maxSortOrder(inListId: defaultId) + 1
-        let movedActiveOrdered = doomedTaskSnapshots
-            .filter { !$0.isCompleted }
-            .sorted { a, b in
-                if a.sortOrder != b.sortOrder { return a.sortOrder < b.sortOrder }
-                return a.createdAt < b.createdAt
-            }
-        var newSortOrderById: [UUID: Int] = [:]
-        for (offset, snap) in movedActiveOrdered.enumerated() {
-            newSortOrderById[snap.id] = baseSortOrder + offset
-        }
-
-        // Move tasks to default, clearing sync state that only made sense
-        // in the old calendar and stripping any label references that
-        // pointed at labels owned by the deleted list. Labels belonging
-        // to other lists are preserved — they'd be filtered out at render
-        // time anyway (labels are scoped by list), but keeping the ids
-        // around means restoring a task to its original list via undo
-        // would bring the correct labels back if we ever add such a
-        // feature.
-        for i in items.indices where doomedIds.contains(items[i].id) {
+        guard !list.isDefault, let defaultId = lists.first(where: { $0.isDefault })?.id else { return }
+        let oldItems = items, oldLists = lists, oldLabels = labels
+        let movedIDs = Set(items.filter { $0.listId == list.id }.map(\.id))
+        var nextOrder = maxSortOrder(inListId: defaultId) + 1
+        let allowedLabels = Set(labels.filter { $0.listId == defaultId }.map(\.id))
+        for i in items.indices where movedIDs.contains(items[i].id) {
             items[i].listId = defaultId
-            // Reminder in the doomed calendar is being deleted above; the
-            // moved task must not retain a link into that calendar or a
-            // subsequent pull of the default list would see the id
-            // missing and remotely-delete the moved local task.
+            // Removing a list revokes its calendar permission. Detach safely;
+            // do not issue an asynchronous delete against a revoked binding.
             items[i].reminderId = nil
+            items[i].reminderCalendarId = nil
             items[i].lastSyncedAt = nil
-            if !doomedLabelIds.isEmpty {
-                items[i].labelIds.removeAll { doomedLabelIds.contains($0) }
-            }
-            if let newOrder = newSortOrderById[items[i].id] {
-                items[i].sortOrder = newOrder
-            }
+            items[i].localModifiedAt = Date()
+            items[i].labelIds.removeAll { !allowedLabels.contains($0) }
+            if !items[i].isCompleted { items[i].sortOrder = nextOrder; nextOrder += 1 }
         }
-
-        // Drop the doomed labels themselves and clear any active filter
-        // that would suddenly reference a nonexistent label.
-        if !doomedLabelIds.isEmpty {
-            labels.removeAll { doomedLabelIds.contains($0.id) }
-            if let filter = activeLabelFilter, doomedLabelIds.contains(filter) {
-                activeLabelFilter = nil
-            }
-        }
-
         lists.removeAll { $0.id == list.id }
-        if activeListId == list.id,
-           let fallback = lists.first(where: { $0.isDefault }) ?? lists.first {
-            switchList(fallback)
-        }
-        saveLists()
-        saveLabels()
-        saveTasks()
+        labels.removeAll { $0.listId == list.id }
+        guard persistAll() else { items = oldItems; lists = oldLists; labels = oldLabels; return }
+        if activeListId == list.id, let fallback = lists.first(where: { $0.id == defaultId }) { switchList(fallback) }
+        if let filter = activeLabelFilter, !labels.contains(where: { $0.id == filter }) { activeLabelFilter = nil }
+        for item in items where movedIDs.contains(item.id) { syncPush(item) }
+    }
 
-        // With local state persisted and reminderId cleared, push each
-        // moved task through the normal sync path. `syncPush` resolves
-        // the destination calendar from the (now-updated) task.listId, so
-        // this creates fresh reminders in the default list's calendar
-        // (or is a no-op when the default list isn't a synced list, or
-        // when Reminders sync is off). The push completion writes the
-        // freshly-minted reminderId + lastSyncedAt back to the store and
-        // re-persists.
-        for id in doomedIds {
-            if let idx = items.firstIndex(where: { $0.id == id }) {
-                syncPush(items[idx])
-            }
-        }
+    var menuBarGoal: TodoItem? {
+        GoalBoardRules.featured(in: items, preferredID: defaults.string(forKey: "menuBarGoalID"))
+    }
+
+    func togglePin(_ item: TodoItem) {
+        guard let i = items.firstIndex(where: { $0.id == item.id }) else { return }
+        let before = items
+        let wasPrimary = menuBarGoal?.id == item.id
+        items[i].isPinned.toggle()
+        guard saveTasks() else { items = before; return }
+        if wasPrimary && !items[i].isPinned { defaults.set("none", forKey: "menuBarGoalID") }
+    }
+
+    func featureInMenuBar(_ item: TodoItem) {
+        guard let i = items.firstIndex(where: { $0.id == item.id }) else { return }
+        let before = items
+        items[i].isPinned = true
+        guard saveTasks() else { items = before; return }
+        defaults.set(item.id.uuidString, forKey: "menuBarGoalID")
+        defaults.set(true, forKey: "showGoalInMenuBar")
     }
 
     // MARK: - CRUD
@@ -341,127 +291,220 @@ final class Store {
         }
     }
 
-    func add(_ item: TodoItem) {
+    @discardableResult
+    func add(_ item: TodoItem) -> Bool {
+        guard !items.contains(where: { $0.id == item.id }) else { return false }
+        let before = items
         var newItem = item
-        // Preserve the caller's chosen list if they set one; otherwise land in
-        // the currently active list. This matters for spawns from
-        // Reminders-imported tasks (whose `listId` was set by the merge code)
-        // and for programmatic imports.
-        if newItem.listId == nil {
-            newItem.listId = activeListId
-        }
+        newItem.steps = GoalStep.normalized(newItem.steps)
+        if newItem.listId == nil { newItem.listId = activeListId }
+        guard lists.contains(where: { $0.id == newItem.listId }) else { return false }
+        let allowed = Set(labels.filter { $0.listId == newItem.listId }.map(\.id))
+        newItem.labelIds.removeAll { !allowed.contains($0) }
         newItem.sortOrder = maxSortOrder(inListId: newItem.listId) + 1
+        newItem.localModifiedAt = Date()
         items.append(newItem)
-        saveTasks()
-        NotificationManager.shared.scheduleReminder(for: newItem)
+        guard saveTasks() else { items = before; return false }
+        scheduleReminder(newItem)
         syncPush(newItem)
+        return true
     }
 
-    func complete(_ item: TodoItem) {
-        guard let i = items.firstIndex(where: { $0.id == item.id }) else { return }
-        items[i].completedAt = Date()
-        NotificationManager.shared.cancelReminder(for: items[i])
-
-        spawnRecurrenceIfNeeded(after: items[i])
-
-        syncPush(items[i])
-        saveTasks()
+    @discardableResult
+    func importData(lists newLists: [TaskList], labels newLabels: [TaskLabel], tasks newTasks: [TodoItem]) -> Bool {
+        let oldItems = items, oldLists = lists, oldLabels = labels
+        guard Set(lists.map(\.id)).isDisjoint(with: newLists.map(\.id)),
+              Set(labels.map(\.id)).isDisjoint(with: newLabels.map(\.id)),
+              Set(items.map(\.id)).isDisjoint(with: newTasks.map(\.id)),
+              Set(newLists.map(\.id)).count == newLists.count,
+              Set(newLabels.map(\.id)).count == newLabels.count,
+              Set(newTasks.map(\.id)).count == newTasks.count else {
+            lastPersistenceError = "导入标识冲突，未写入数据。"; return false
+        }
+        lists.append(contentsOf: newLists)
+        labels.append(contentsOf: newLabels)
+        for var task in newTasks {
+            if task.listId == nil { task.listId = activeListId }
+            guard lists.contains(where: { $0.id == task.listId }) else {
+                items = oldItems; lists = oldLists; labels = oldLabels
+                lastPersistenceError = "导入目标引用了不存在的目标集。"; return false
+            }
+            let allowed = Set(labels.filter { $0.listId == task.listId }.map(\.id))
+            task.labelIds.removeAll { !allowed.contains($0) }
+            task.sortOrder = maxSortOrder(inListId: task.listId) + 1
+            task.localModifiedAt = Date()
+            items.append(task)
+        }
+        guard persistAll() else { items = oldItems; lists = oldLists; labels = oldLabels; return false }
+        let inserted = Set(newTasks.map(\.id))
+        for task in items where inserted.contains(task.id) { scheduleReminder(task); syncPush(task) }
+        return true
     }
 
-    /// Mark an item complete as a *result* of a remote (Reminders) change.
-    /// Same local bookkeeping as `complete(_:)` but without pushing the
-    /// completion back to Reminders — that would be a redundant round trip
-    /// and, if a merge conflict has already been resolved, could clobber a
-    /// newer state.
-    func completeFromRemote(_ item: TodoItem, at date: Date) {
-        guard let i = items.firstIndex(where: { $0.id == item.id }) else { return }
-        // Nothing to do if we already recorded this completion.
-        if items[i].completedAt != nil { return }
+    @discardableResult
+    func complete(_ item: TodoItem) -> Bool {
+        finish(item, at: Date(), fromRemote: false)
+    }
+
+    @discardableResult
+    func completeFromRemote(_ item: TodoItem, at date: Date) -> Bool {
+        finish(item, at: date, fromRemote: true)
+    }
+
+    private func finish(_ item: TodoItem, at date: Date, fromRemote: Bool) -> Bool {
+        guard let i = items.firstIndex(where: { $0.id == item.id }) else { return false }
+        guard !items[i].isCompleted else { return true }
+        let before = items
         items[i].completedAt = date
-        NotificationManager.shared.cancelReminder(for: items[i])
-        spawnRecurrenceIfNeeded(after: items[i])
-        saveTasks()
+        if !fromRemote { items[i].localModifiedAt = Date() }
+        let next = spawnRecurrenceIfNeeded(after: items[i])
+        guard saveTasks() else { items = before; return false }
+        cancelReminder(items[i])
+        if let next { scheduleReminder(next); syncPush(next) }
+        if !fromRemote { syncPush(items[i]) }
+        return true
     }
 
-    /// Spawn the next occurrence of a recurring task once the given item has
-    /// just been marked complete. Extracted so the local and remote
-    /// completion paths behave identically.
-    private func spawnRecurrenceIfNeeded(after completed: TodoItem) {
-        guard let recurrence = completed.recurrence,
-              let dueDate = completed.dueDate,
-              let nextDate = recurrence.nextDueDate(from: dueDate) else { return }
+    /// Mutates memory only. The caller commits the completion and successor
+    /// together before either notifications or remote writes are allowed.
+    @discardableResult
+    func spawnRecurrenceIfNeeded(after completed: TodoItem) -> TodoItem? {
+        guard completed.spawnedRecurrenceID == nil, !completed.hasRemoteRecurrence,
+              let parent = items.firstIndex(where: { $0.id == completed.id }),
+              let recurrence = completed.recurrence, let due = completed.dueDate,
+              let nextDate = recurrence.nextDueDate(from: due) else { return nil }
         var next = completed
         next.id = UUID()
         next.createdAt = Date()
+        next.localModifiedAt = next.createdAt
         next.completedAt = nil
+        next.steps = completed.steps.map { $0.forNextOccurrence() }
         next.dueDate = nextDate
         next.reminderId = nil
-        // Fresh occurrence: no sync stamp yet — otherwise a subsequent pull
-        // could think this brand-new local task is "older than remote" and
-        // overwrite fields the user hasn't seen yet.
+        next.reminderCalendarId = nil
+        next.isPinned = false
         next.lastSyncedAt = nil
-        // Order the new instance at the end of *its own* list, computed
-        // independently of the active label filter (a filtered activeTasks
-        // could be empty and produce sortOrder = 0, colliding with existing
-        // items).
+        next.spawnedRecurrenceID = nil
+        next.recurrenceParentID = completed.id
         next.sortOrder = maxSortOrder(inListId: next.listId) + 1
+        items[parent].spawnedRecurrenceID = next.id
         items.append(next)
-        NotificationManager.shared.scheduleReminder(for: next)
-        syncPush(next)
+        return next
     }
 
-    func restore(_ item: TodoItem) {
-        guard let i = items.firstIndex(where: { $0.id == item.id }) else { return }
+    /// Immediate undo retracts only the untouched successor created by this
+    /// completion. An edited/completed successor belongs to the user already.
+    @discardableResult
+    func undoCompletion(_ item: TodoItem) -> Bool {
+        guard let parent = items.first(where: { $0.id == item.id }), parent.isCompleted else { return false }
+        let before = items
+        let child = items.first { $0.id == parent.spawnedRecurrenceID && $0.recurrenceParentID == parent.id && !$0.isCompleted && ($0.localModifiedAt ?? $0.createdAt) <= $0.createdAt }
+        if let child {
+            guard prepareReminderDeletions([child]) else { return false }
+            items.removeAll { $0.id == child.id }
+        }
+        guard let i = items.firstIndex(where: { $0.id == parent.id }) else { return false }
         items[i].completedAt = nil
-        // Restore into the item's own list, not the active list, so a restore
-        // from a filtered view doesn't silently move the task.
-        items[i].sortOrder = maxSortOrder(inListId: items[i].listId) + 1
-        saveTasks()
-        NotificationManager.shared.scheduleReminder(for: items[i])
+        items[i].localModifiedAt = Date()
+        if child != nil { items[i].spawnedRecurrenceID = nil }
+        guard saveTasks() else { items = before; return false }
+        if let child { cancelReminder(child); syncDelete(child) }
+        scheduleReminder(items[i])
         syncPush(items[i])
+        return true
     }
 
-    func update(_ item: TodoItem) {
-        guard let i = items.firstIndex(where: { $0.id == item.id }) else { return }
-        let previous = items[i]
-        var updated = item
+    /// Archive restore retains the successor association, so completing the
+    /// restored historical occurrence cannot spawn the same period again.
+    @discardableResult
+    func restore(_ item: TodoItem) -> Bool {
+        guard let i = items.firstIndex(where: { $0.id == item.id }) else { return false }
+        guard items[i].isCompleted else { return true }
+        let before = items
+        items[i].completedAt = nil
+        items[i].localModifiedAt = Date()
+        items[i].sortOrder = maxSortOrder(inListId: items[i].listId) + 1
+        guard saveTasks() else { items = before; return false }
+        scheduleReminder(items[i]); syncPush(items[i])
+        return true
+    }
 
-        // If the item moved lists, clean up state that only made sense in the
-        // old list.
+    /// Steps are local to Polaris. Toggle the latest value without replaying a
+    /// stale row snapshot, rescheduling the goal, or pushing Apple-owned fields.
+    @discardableResult
+    func toggleStep(goalID: UUID, stepID: UUID) -> Bool {
+        guard let goal = items.firstIndex(where: { $0.id == goalID && !$0.isCompleted }),
+              let step = items[goal].steps.firstIndex(where: { $0.id == stepID }) else { return false }
+        let before = items
+        items[goal].steps[step].isCompleted.toggle()
+        guard saveTasks() else { items = before; return false }
+        return true
+    }
+
+    @discardableResult
+    func update(_ item: TodoItem) -> Bool {
+        guard let i = items.firstIndex(where: { $0.id == item.id }), lists.contains(where: { $0.id == item.listId }) else { return false }
+        let before = items, previous = items[i]
+        var updated = item
+        updated.steps = GoalStep.normalized(updated.steps)
+        // An editor may have opened before a sync callback assigned identity.
+        updated.reminderId = previous.reminderId
+        updated.reminderCalendarId = previous.reminderCalendarId
+        updated.lastSyncedAt = previous.lastSyncedAt
+        updated.spawnedRecurrenceID = previous.spawnedRecurrenceID
+        updated.recurrenceParentID = previous.recurrenceParentID
+        updated.localModifiedAt = Date()
+        if previous.recurrence != updated.recurrence || (item.reminderRecurrenceWasEdited == true && item.remoteRecurrenceRules == nil) {
+            updated.remoteRecurrenceRules = nil
+            updated.reminderRecurrenceWasEdited = true
+        } else {
+            updated.remoteRecurrenceRules = previous.remoteRecurrenceRules
+            updated.reminderRecurrenceWasEdited = previous.reminderRecurrenceWasEdited
+        }
+        let allowed = Set(labels.filter { $0.listId == updated.listId }.map(\.id))
+        updated.labelIds.removeAll { !allowed.contains($0) }
         if previous.listId != updated.listId {
-            // Labels are per-list — strip any that aren't owned by the
-            // destination list, or they'd render as orphaned pills.
-            let destLabels = Set(labels.filter { $0.listId == updated.listId }.map(\.id))
-            updated.labelIds = updated.labelIds.filter { destLabels.contains($0) }
-            // Recompute a collision-free sortOrder at the end of the
-            // destination list, disregarding filters entirely.
+            let source = previous.reminderCalendarId ?? lists.first(where: { $0.id == previous.listId })?.remindersCalendarId
+            let destination = lists.first(where: { $0.id == updated.listId })?.remindersCalendarId
+            if let source, destination != nil, lists.contains(where: { $0.remindersCalendarId == source }) {
+                updated.reminderCalendarId = source // pending migration, protected from destination pull deletion
+            } else {
+                updated.reminderId = nil
+                updated.reminderCalendarId = nil
+                updated.lastSyncedAt = nil
+            }
             updated.sortOrder = maxSortOrder(inListId: updated.listId) + 1
         }
-
         items[i] = updated
-        saveTasks()
-        NotificationManager.shared.scheduleReminder(for: updated)
-        syncPush(updated)
+        guard saveTasks() else { items = before; return false }
+        scheduleReminder(updated); syncPush(updated)
+        return true
     }
 
-    func delete(_ item: TodoItem) {
-        RemindersSync.shared.deleteReminder(for: item)
-        items.removeAll { $0.id == item.id }
-        saveTasks()
-        NotificationManager.shared.cancelReminder(for: item)
+    @discardableResult
+    func delete(_ item: TodoItem) -> Bool {
+        guard let current = items.first(where: { $0.id == item.id }) else { return false }
+        guard prepareReminderDeletions([current]) else { return false }
+        let before = items
+        items.removeAll { $0.id == current.id }
+        guard saveTasks() else { items = before; return false }
+        cancelReminder(current); syncDelete(current)
+        return true
     }
 
-    /// Delete a task as a *result* of a remote (Reminders) change — skips the
-    /// EventKit round trip since the reminder is already gone.
-    func deleteFromRemote(_ item: TodoItem) {
-        NotificationManager.shared.cancelReminder(for: item)
+    @discardableResult
+    func deleteFromRemote(_ item: TodoItem) -> Bool {
+        let before = items
         items.removeAll { $0.id == item.id }
-        saveTasks()
+        guard saveTasks() else { items = before; return false }
+        cancelReminder(item)
+        return true
     }
 
     // MARK: - Reorder
 
     func move(from source: IndexSet, to destination: Int) {
+        let before = items
         var active = activeTasks
         active.move(fromOffsets: source, toOffset: destination)
         for (idx, task) in active.enumerated() {
@@ -469,39 +512,32 @@ final class Store {
                 items[i].sortOrder = idx
             }
         }
-        saveTasks()
+        if !saveTasks() { items = before }
     }
 
     /// Persist an explicit order for the given task ids (the visible custom-sorted
     /// set). Each id's `sortOrder` becomes its position in the array. Used by the
     /// drag-to-reorder gesture.
     func applyManualOrder(_ orderedIds: [UUID]) {
+        let before = items
         for (idx, id) in orderedIds.enumerated() {
             if let i = items.firstIndex(where: { $0.id == id }) {
                 items[i].sortOrder = idx
             }
         }
-        saveTasks()
+        if !saveTasks() { items = before }
     }
 
-    func clearCompleted() {
-        // Snapshot the doomed tasks BEFORE mutating `items` so we (a) don't
-        // mutate the collection while iterating over it, and (b) still have
-        // the reminderId / notification identifier of each task at hand.
-        //
-        // Without this cleanup, a later Reminders pull would see the remote
-        // reminders that we forgot to delete and happily re-import them as
-        // brand-new local tasks (since the local `reminderId` is gone with
-        // the row). Local notifications would similarly linger and fire for
-        // tasks the user has explicitly cleared.
+    @discardableResult
+    func clearCompleted() -> Bool {
+        let before = items
         let doomed = items.filter { $0.isCompleted && $0.listId == activeListId }
-        for item in doomed {
-            NotificationManager.shared.cancelReminder(for: item)
-            RemindersSync.shared.deleteReminder(for: item)
-        }
-        let doomedIds = Set(doomed.map(\.id))
-        items.removeAll { doomedIds.contains($0.id) }
-        saveTasks()
+        guard prepareReminderDeletions(doomed) else { return false }
+        let ids = Set(doomed.map(\.id))
+        items.removeAll { ids.contains($0.id) }
+        guard saveTasks() else { items = before; return false }
+        for item in doomed { cancelReminder(item); syncDelete(item) }
+        return true
     }
 
     // MARK: - Persistence
@@ -557,15 +593,22 @@ final class Store {
         }
     }
 
-    private func saveTasks() {
-        guard tasksWritable else {
-            logger.warning("Skipping tasks save — writes are disabled after a failed corrupt-file backup")
-            return
-        }
+    @discardableResult
+    private func saveTasks() -> Bool {
+        save(items, to: tasksURL, writable: tasksWritable, notify: true)
+    }
+
+    private func save<T: Encodable>(_ value: T, to url: URL, writable: Bool = true, notify: Bool = false) -> Bool {
+        guard writable else { lastPersistenceError = "无法保存 \(url.lastPathComponent)：原文件恢复失败，写入已暂停。"; return false }
         do {
-            try JSONEncoder().encode(items).write(to: tasksURL, options: .atomic)
+            try JSONEncoder().encode(value).write(to: url, options: .atomic)
+            lastPersistenceError = nil
+            if notify && performsSideEffects { NotificationCenter.default.post(name: .goalBoardChanged, object: nil) }
+            return true
         } catch {
-            logger.error("Failed to save tasks: \(error.localizedDescription)")
+            lastPersistenceError = "保存 \(url.lastPathComponent) 失败：\(error.localizedDescription)"
+            logger.error("\(self.lastPersistenceError ?? "")")
+            return false
         }
     }
 
@@ -590,30 +633,64 @@ final class Store {
         }
     }
 
-    private func saveLists() {
-        guard listsWritable else {
-            logger.warning("Skipping lists save — writes are disabled after a failed corrupt-file backup")
-            return
+    @discardableResult
+    private func saveLists() -> Bool { save(lists, to: listsURL, writable: listsWritable) }
+
+    @discardableResult
+    func persist() -> Bool { persistAll() }
+
+    /// Multi-file saves retain the previous bytes and roll back earlier writes
+    /// on a later failure. Errors remain observable, including rollback errors.
+    @discardableResult
+    func persistAll() -> Bool {
+        guard tasksWritable && listsWritable && labelsWritable else {
+            lastPersistenceError = "原文件恢复失败，保存已暂停。"; return false
         }
+        var originals: [(URL, Data?)] = []
+        var written: [URL] = []
         do {
-            try JSONEncoder().encode(lists).write(to: listsURL, options: .atomic)
+            let encoded = [(tasksURL, try JSONEncoder().encode(items)), (listsURL, try JSONEncoder().encode(lists)), (labelsURL, try JSONEncoder().encode(labels))]
+            for (url, _) in encoded {
+                originals.append((url, FileManager.default.fileExists(atPath: url.path) ? try Data(contentsOf: url) : nil))
+            }
+            for (url, data) in encoded { try data.write(to: url, options: .atomic); written.append(url) }
+            lastPersistenceError = nil
+            if performsSideEffects { NotificationCenter.default.post(name: .goalBoardChanged, object: nil) }
+            return true
         } catch {
-            logger.error("Failed to save lists: \(error.localizedDescription)")
+            var message = "保存失败：\(error.localizedDescription)"
+            for (url, bytes) in originals.reversed() where written.contains(url) {
+                do {
+                    if let bytes { try bytes.write(to: url, options: .atomic) }
+                    else { try FileManager.default.removeItem(at: url) }
+                } catch { message += "；恢复 \(url.lastPathComponent) 失败：\(error.localizedDescription)" }
+            }
+            lastPersistenceError = message
+            logger.error("\(message)")
+            return false
         }
     }
 
-    /// Persist all data (tasks + lists). Call after direct item mutations.
-    func persist() {
-        saveTasks()
-        saveLists()
+    @discardableResult
+    func recordReminderDeletion(_ item: TodoItem) -> Bool {
+        guard item.reminderId != nil else { return true }
+        let before = pendingReminderDeletions
+        pendingReminderDeletions.removeAll { $0.reminderId == item.reminderId }
+        pendingReminderDeletions.append(item)
+        guard save(pendingReminderDeletions, to: dir.appendingPathComponent("pending-reminder-deletions.json")) else {
+            pendingReminderDeletions = before; return false
+        }
+        return true
     }
 
-    /// Persist tasks, lists, and labels together. Use after bulk mutations
-    /// such as import where all three collections may have changed.
-    func persistAll() {
-        saveTasks()
-        saveLists()
-        saveLabels()
+    @discardableResult
+    func acknowledgeReminderDeletion(_ reminderId: String) -> Bool {
+        let before = pendingReminderDeletions
+        pendingReminderDeletions.removeAll { $0.reminderId == reminderId }
+        guard save(pendingReminderDeletions, to: dir.appendingPathComponent("pending-reminder-deletions.json")) else {
+            pendingReminderDeletions = before; return false
+        }
+        return true
     }
 
     /// Re-run the orphan-assignment pass: any task whose listId is nil or
@@ -638,9 +715,9 @@ final class Store {
     @discardableResult
     func mutate(_ id: UUID, _ mutator: (inout TodoItem) -> Void) -> Bool {
         guard let i = items.firstIndex(where: { $0.id == id }) else { return false }
-        mutator(&items[i])
-        saveTasks()
-        return true
+        var changed = items[i]
+        mutator(&changed)
+        return update(changed)
     }
 
     private func loadLabels() {
@@ -657,23 +734,37 @@ final class Store {
         }
     }
 
-    private func saveLabels() {
-        guard labelsWritable else {
-            logger.warning("Skipping labels save — writes are disabled after a failed corrupt-file backup")
-            return
-        }
-        do {
-            try JSONEncoder().encode(labels).write(to: labelsURL, options: .atomic)
-        } catch {
-            logger.error("Failed to save labels: \(error.localizedDescription)")
-        }
+    @discardableResult
+    private func saveLabels() -> Bool { save(labels, to: labelsURL, writable: labelsWritable) }
+
+    // MARK: - Side effects (isolated tests never touch notifications/accounts)
+
+    func scheduleReminder(_ item: TodoItem) {
+        if performsSideEffects && !DocketRuntime.isPreview { NotificationManager.shared.scheduleReminder(for: item) }
     }
 
-    // MARK: - Reminders Sync
+    func cancelReminder(_ item: TodoItem) {
+        if performsSideEffects && !DocketRuntime.isPreview { NotificationManager.shared.cancelReminder(for: item) }
+    }
+
+    private var syncService: RemindersSync? {
+        if let override = remindersSyncOverride { return override }
+        return performsSideEffects && !DocketRuntime.isPreview ? RemindersSync.shared : nil
+    }
+
+    private func prepareReminderDeletions(_ items: [TodoItem]) -> Bool {
+        guard let service = syncService else { return true }
+        for item in items {
+            if let snapshot = service.deletionSnapshot(for: item), !recordReminderDeletion(snapshot) { return false }
+        }
+        return true
+    }
+
+    private func syncDelete(_ item: TodoItem) { syncService?.deleteReminder(for: item) }
 
     private func syncPush(_ item: TodoItem) {
-        guard UserDefaults.standard.bool(forKey: "remindersSyncEnabled") else { return }
+        guard defaults.bool(forKey: "remindersSyncEnabled") else { return }
         let list = lists.first(where: { $0.id == item.listId })
-        RemindersSync.shared.pushTask(item, calendarId: list?.remindersCalendarId)
+        syncService?.pushTask(item, calendarId: list?.remindersCalendarId)
     }
 }

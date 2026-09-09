@@ -52,7 +52,7 @@ enum AppTheme: Int, CaseIterable, Identifiable {
         case .mint:       Color(red: 0.86, green: 0.97, blue: 0.93)
         case .sky:        Color(red: 0.87, green: 0.94, blue: 1.00)
         case .periwinkle: Color(red: 0.88, green: 0.89, blue: 1.00)
-        case .midnight:   Color(red: 0.08, green: 0.08, blue: 0.14)
+        case .midnight:   Color(red: 0.075, green: 0.09, blue: 0.115)
         case .custom:     .white
         }
     }
@@ -105,7 +105,7 @@ struct ThemeManager {
             return Color(hue: customHue, saturation: customSat, brightness: systemDark ? 0.15 : 0.95)
         }
         if systemDark && theme != .midnight {
-            return Color(red: 0.10, green: 0.10, blue: 0.12)
+            return Color(red: 0.09, green: 0.10, blue: 0.12)
         }
         return theme.background
     }

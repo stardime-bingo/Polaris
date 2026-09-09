@@ -1,0 +1,16 @@
+Polaris
+
+Based on Docket by @santoru, licensed under the MIT License.
+Upstream: https://github.com/santoru/docket
+Upstream baseline: b9735ca04059205dc8a01fdeaed3edf9fec092c9
+
+Polaris modifications are copyright (c) 2026 BINGO and are distributed under
+the MIT License in LICENSE. Original author notices and upstream Git history
+are retained. Historical Docket release notes are in docs/UPSTREAM_CHANGELOG.md.
+
+Polaris brand imagery identifies this project. Names and logos remain the
+property of their respective owners; the software license does not grant
+trademark rights or imply endorsement by Apple or the Docket author.
+
+The README hero is AI-generated promotional artwork. Interface screenshots
+are captured from the native app with fictional, generated demo data.

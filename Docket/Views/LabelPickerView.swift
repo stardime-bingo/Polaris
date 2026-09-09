@@ -7,19 +7,21 @@ import SwiftUI
 /// Multi-select label picker showing colored pills.
 struct LabelPickerView: View {
     @Binding var selectedIds: [UUID]
+    var listID: UUID? = nil
     var store = Store.shared
-    @AppStorage("appTheme") private var themeRaw: Int = AppTheme.white.rawValue
+    private var labels: [TaskLabel] { store.labels.filter { $0.listId == (listID ?? store.activeListId) } }
+    @Environment(\.polarisPalette) private var palette
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(L10n.labels).font(.subheadline.weight(.medium)).foregroundStyle(.secondary)
-            if store.labelsForActiveList.isEmpty {
-                Text(L10n.noLabels).font(.subheadline).foregroundStyle(.tertiary)
+            Text(L10n.labels).font(.system(size: 11.5)).foregroundStyle(palette.secondary)
+            if labels.isEmpty {
+                Text(L10n.noLabels).font(.system(size: 11.5)).foregroundStyle(palette.muted)
             } else {
                 FlowLayout(spacing: 6) {
-                    ForEach(store.labelsForActiveList) { label in
+                    ForEach(labels) { label in
                         let isSelected = selectedIds.contains(label.id)
-                        let adaptedColor = label.color.adaptedForCurrentScheme(themeRaw: themeRaw)
+                        let adaptedColor = palette.accentInk
                         Button {
                             if isSelected { selectedIds.removeAll { $0 == label.id } }
                             else { selectedIds.append(label.id) }
@@ -28,15 +30,16 @@ struct LabelPickerView: View {
                                 Image(systemName: label.icon)
                                     .font(.system(size: 11))
                                 Text(label.name)
-                                    .font(.subheadline.weight(.medium))
+                                    .font(.system(size: 11.5))
                             }
                             .padding(.horizontal, 10)
-                            .padding(.vertical, 5)
-                            .background(Capsule().fill(isSelected ? adaptedColor.opacity(0.2) : Color.gray.opacity(0.1)))
-                            .overlay(Capsule().stroke(isSelected ? adaptedColor : Color.gray.opacity(0.3), lineWidth: 1))
-                            .foregroundStyle(isSelected ? adaptedColor : .secondary)
+                            .frame(minHeight: 32)
+                            .background(RoundedRectangle(cornerRadius: 5).fill(isSelected ? palette.selection : .clear))
+                            .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(isSelected ? adaptedColor.opacity(0.3) : .clear, lineWidth: 0.5))
+                            .foregroundStyle(isSelected ? adaptedColor : palette.secondary)
+                            .contentShape(Rectangle())
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(GoalControlStyle()).accessibilityAddTraits(isSelected ? .isSelected : [])
                     }
                 }
             }

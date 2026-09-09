@@ -49,6 +49,8 @@ struct IconPickerButton: View {
                 .contentShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
                 .scaleEffect(hovered ? 1.06 : 1.0)
                 .animation(.spring(response: 0.28, dampingFraction: 0.72), value: hovered)
+                .frame(minWidth: 28, minHeight: 28)
+                .contentShape(Rectangle())
         }
         .buttonStyle(PressableScaleStyle())
         .onHover { hovered = $0 }
@@ -71,6 +73,7 @@ struct IconPickerButton: View {
             .padding(12)
             .frame(width: 240)
         }
+        .polarisPickerEscape(isPresented: $showPicker)
         .onChange(of: showPicker) { _, newValue in
             onPopoverChange?(newValue)
         }

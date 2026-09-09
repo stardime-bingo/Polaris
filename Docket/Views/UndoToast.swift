@@ -4,16 +4,16 @@
 
 import SwiftUI
 
-/// A prominent toast notification with an undo action that auto-dismisses after 3 seconds.
+/// A reversible completion with time to react, including keyboard users.
 struct UndoToast: View {
     let message: String
     let trigger: Int
     let onUndo: () -> Void
     @Binding var isVisible: Bool
 
-    @AppStorage("appTheme") private var themeRaw: Int = AppTheme.white.rawValue
-    @AppStorage("customHue") private var customHue: Double = 0.55
-    private var accent: Color { ThemeManager.resolvedAccent(themeRaw: themeRaw, customHue: customHue) }
+    @Environment(\.polarisPalette) private var palette
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    private var accent: Color { palette.action }
 
     @State private var dismissTask: DispatchWorkItem?
 
@@ -38,7 +38,7 @@ struct UndoToast: View {
                         .padding(.horizontal, 12)
                         .padding(.vertical, 5)
                         .background(Capsule().fill(accent))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(palette.actionText)
                 }
                 .buttonStyle(.plain)
             }
@@ -49,6 +49,10 @@ struct UndoToast: View {
             .transition(.move(edge: .bottom).combined(with: .opacity))
             .onChange(of: trigger) { _, _ in scheduleAutoDismiss() }
             .onAppear { scheduleAutoDismiss() }
+            .onHover { hovering in
+                if hovering { dismissTask?.cancel() } else { scheduleAutoDismiss() }
+            }
+            .onDisappear { dismissTask?.cancel() }
         }
     }
 
@@ -56,12 +60,12 @@ struct UndoToast: View {
         dismissTask?.cancel()
         let task = DispatchWorkItem { dismiss() }
         dismissTask = task
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3, execute: task)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 8, execute: task)
     }
 
     private func dismiss() {
         dismissTask?.cancel()
         dismissTask = nil
-        withAnimation(.easeOut(duration: 0.2)) { isVisible = false }
+        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) { isVisible = false }
     }
 }

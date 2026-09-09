@@ -21,7 +21,7 @@ final class TipJar {
     private(set) var loadState: LoadState = .loading
     private(set) var isPurchasing = false
 
-    private let logger = Logger(subsystem: "blog.insecurity.docket", category: "tip-jar")
+    private let logger = Logger(subsystem: "com.bingowu.polaris", category: "tip-jar")
 
     private let productIDs = [
         "blog.insecurity.Docket.tip.small",

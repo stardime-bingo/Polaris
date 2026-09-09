@@ -9,7 +9,8 @@ import Foundation
 /// tables bundled in Contents/Resources.
 enum L10n {
     private static func s(_ key: String, _ value: String) -> String {
-        NSLocalizedString(key, value: value, comment: "")
+        let bundle = Bundle.main.path(forResource: "zh-Hans", ofType: "lproj").flatMap(Bundle.init(path:)) ?? Bundle.main
+        return bundle.localizedString(forKey: key, value: value, table: nil)
     }
 
     // MARK: - General

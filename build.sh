@@ -6,21 +6,29 @@
 # Note: this self-build defines DOCKET_SELFBUILD and omits the Tip Jar
 # (StoreKit in-app purchases only work in a Mac App Store-distributed build).
 # The Tip Jar ships in the App Store build produced by the Xcode project.
-set -e
+set -euo pipefail
 
-APP_NAME="Docket"
+APP_NAME="Polaris"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-BUILD_DIR="$SCRIPT_DIR/build"
+BUILD_DIR="${POLARIS_BUILD_DIR:-$SCRIPT_DIR/build}"
 APP_BUNDLE="$BUILD_DIR/$APP_NAME.app"
 SRC_DIR="$SCRIPT_DIR/Docket"
+BUILD_ARCH="$(uname -m)"
+case "${POLARIS_BUILD_MODE:-release}" in
+    release) COMPILER_FLAGS=(-Osize -whole-module-optimization) ;;
+    debug) COMPILER_FLAGS=(-Onone -g) ;;
+    *) echo "POLARIS_BUILD_MODE must be release or debug" >&2; exit 2 ;;
+esac
 
 echo "🔨 Building $APP_NAME..."
 
-rm -rf "$BUILD_DIR"
+# Keep other products, test binaries and the preview cache in this directory.
+rm -rf "$APP_BUNDLE"
 mkdir -p "$APP_BUNDLE/Contents/MacOS" "$APP_BUNDLE/Contents/Resources"
 
 # Compile all Swift source files
 swiftc \
+    -target "$BUILD_ARCH-apple-macos14.0" \
     -o "$APP_BUNDLE/Contents/MacOS/$APP_NAME" \
     -framework AppKit \
     -framework SwiftUI \
@@ -28,10 +36,23 @@ swiftc \
     -framework ServiceManagement \
     -framework Carbon \
     -framework EventKit \
+    "${COMPILER_FLAGS[@]}" \
     -parse-as-library \
     -suppress-warnings \
     -D DOCKET_SELFBUILD \
+    "$SRC_DIR/Models/PolarisAppearance.swift" \
+    "$SRC_DIR/Services/GoalDateParser.swift" \
+    "$SRC_DIR/Services/GoalImportPlan.swift" \
+    "$SRC_DIR/Views/PolarisSearchField.swift" \
+    "$SRC_DIR/Views/PolarisSettingsView.swift" \
+    "$SRC_DIR/Views/PolarisChrome.swift" \
+    "$SRC_DIR/Views/PolarisActivityView.swift" \
+    "$SRC_DIR/Services/PolarisMenuActivity.swift" \
     "$SRC_DIR/Models/ReminderOffset.swift" \
+    "$SRC_DIR/Models/NavDestination.swift" \
+    "$SRC_DIR/Models/GoalPeriod.swift" \
+    "$SRC_DIR/Services/GoalBoardRules.swift" \
+    "$SRC_DIR/Services/PolarisSymbol.swift" \
     "$SRC_DIR/Models/TodoItem.swift" \
     "$SRC_DIR/Models/TaskList.swift" \
     "$SRC_DIR/Models/TaskLabel.swift" \
@@ -71,6 +92,12 @@ swiftc \
     "$SRC_DIR/Views/UndoToast.swift" \
     "$SRC_DIR/Views/VScroll.swift" \
     "$SRC_DIR/Views/TaskListView.swift" \
+    "$SRC_DIR/Views/GoalScheduleView.swift" \
+    "$SRC_DIR/Views/GoalEditorView.swift" \
+    "$SRC_DIR/Views/GoalEditorControls.swift" \
+    "$SRC_DIR/Views/GoalChecklistView.swift" \
+    "$SRC_DIR/Views/GoalEditorOptionsView.swift" \
+    "$SRC_DIR/Views/ShortcutRecorderView.swift" \
     "$SRC_DIR/Views/CreateTaskView.swift" \
     "$SRC_DIR/Views/TaskDetailView.swift" \
     "$SRC_DIR/Views/CompletedTasksView.swift" \
@@ -79,13 +106,20 @@ swiftc \
     "$SRC_DIR/DocketApp.swift"
 
 # Copy icons
-cp "$SRC_DIR/icon.icns" "$APP_BUNDLE/Contents/Resources/"
+cp "$SRC_DIR/PolarisLogo.png" "$APP_BUNDLE/Contents/Resources/"
+# Apple Icon Composer compiles Light/Dark variants plus an older-macOS fallback.
+xcrun actool "$SRC_DIR/PolarisAB.icon" \
+    --compile "$APP_BUNDLE/Contents/Resources" \
+    --platform macosx --minimum-deployment-target 14.0 --target-device mac --standalone-icon-behavior all \
+    --app-icon PolarisAB --output-partial-info-plist "$BUILD_DIR/icon-info.plist" \
+    --output-format human-readable-text
 cp "$SRC_DIR/menubar-icon.png" "$APP_BUNDLE/Contents/Resources/"
 cp "$SRC_DIR/menubar-icon@2x.png" "$APP_BUNDLE/Contents/Resources/"
 
 # Copy localizations (en + it)
 cp -R "$SRC_DIR/en.lproj" "$APP_BUNDLE/Contents/Resources/"
 cp -R "$SRC_DIR/it.lproj" "$APP_BUNDLE/Contents/Resources/"
+cp -R "$SRC_DIR/zh-Hans.lproj" "$APP_BUNDLE/Contents/Resources/"
 
 # Generate Info.plist
 cat > "$APP_BUNDLE/Contents/Info.plist" << 'PLIST'
@@ -94,33 +128,38 @@ cat > "$APP_BUNDLE/Contents/Info.plist" << 'PLIST'
 <plist version="1.0">
 <dict>
     <key>CFBundleName</key>
-    <string>Docket</string>
+    <string>Polaris</string>
     <key>CFBundleDisplayName</key>
-    <string>Docket</string>
+    <string>Polaris</string>
     <key>CFBundleIdentifier</key>
-    <string>blog.insecurity.docket</string>
+    <string>com.bingowu.polaris</string>
     <key>CFBundleVersion</key>
-    <string>1.12.1</string>
+    <string>22</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.12.1</string>
+    <string>1.4.0</string>
     <key>CFBundleExecutable</key>
-    <string>Docket</string>
+    <string>Polaris</string>
     <key>CFBundleIconFile</key>
-    <string>icon</string>
+    <string>PolarisAB</string>
+    <key>CFBundleIconName</key>
+    <string>PolarisAB</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>LSUIElement</key>
     <true/>
     <key>LSMinimumSystemVersion</key>
     <string>14.0</string>
+    <key>NSRemindersFullAccessUsageDescription</key>
+    <string>Polaris 可将你选择的目标集与 Apple 提醒事项双向同步。</string>
     <key>NSRemindersUsageDescription</key>
-    <string>Docket syncs your tasks with Apple Reminders for iCloud, Siri, and Apple Watch access.</string>
+    <string>Polaris 可将目标同步到 Apple 提醒事项，以便通过 iCloud、Siri 和 Apple Watch 查看。</string>
     <key>CFBundleDevelopmentRegion</key>
-    <string>en</string>
+    <string>zh-Hans</string>
     <key>CFBundleLocalizations</key>
     <array>
         <string>en</string>
         <string>it</string>
+        <string>zh-Hans</string>
     </array>
 </dict>
 </plist>
@@ -129,7 +168,7 @@ PLIST
 echo "✅ Built: $APP_BUNDLE"
 
 # Sign the app so notifications and other system features work
-codesign --force --sign - --identifier blog.insecurity.docket "$APP_BUNDLE"
+codesign --force --sign - --identifier com.bingowu.polaris "$APP_BUNDLE"
 
 echo ""
 echo "To run:     open $APP_BUNDLE"

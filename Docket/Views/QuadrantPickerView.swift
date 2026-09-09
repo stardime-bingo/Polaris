@@ -7,24 +7,12 @@ import SwiftUI
 /// 2×2 grid picker for assigning a task to an Eisenhower quadrant.
 struct QuadrantPickerView: View {
     @Binding var quadrant: Quadrant?
+    @Environment(\.polarisPalette) private var palette
 
-    @AppStorage("matrixDoFirstColor") private var doFirstColor = "#EF4444"
-    @AppStorage("matrixScheduleColor") private var scheduleColor = "#3B82F6"
-    @AppStorage("matrixDelegateColor") private var delegateColor = "#F59E0B"
-    @AppStorage("matrixEliminateColor") private var eliminateColor = "#9CA3AF"
-    @AppStorage("matrixDoFirstLabel") private var doFirstLabel = "Do First"
-    @AppStorage("matrixScheduleLabel") private var scheduleLabel = "Schedule"
-    @AppStorage("matrixDelegateLabel") private var delegateLabel = "Delegate"
-    @AppStorage("matrixEliminateLabel") private var eliminateLabel = "Eliminate"
-
-    private func color(for q: Quadrant) -> Color {
-        switch q {
-        case .doFirst: Color(hex: doFirstColor)
-        case .schedule: Color(hex: scheduleColor)
-        case .delegate: Color(hex: delegateColor)
-        case .eliminate: Color(hex: eliminateColor)
-        }
-    }
+    @AppStorage("matrixDoFirstLabel") private var doFirstLabel = "优先推进"
+    @AppStorage("matrixScheduleLabel") private var scheduleLabel = "持续投入"
+    @AppStorage("matrixDelegateLabel") private var delegateLabel = "委派协作"
+    @AppStorage("matrixEliminateLabel") private var eliminateLabel = "暂时放下"
 
     private func label(for q: Quadrant) -> String {
         switch q {
@@ -37,22 +25,22 @@ struct QuadrantPickerView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(L10n.matrix).font(.subheadline.weight(.medium)).foregroundStyle(.secondary)
+            Text(L10n.matrix).font(.system(size: 11.5)).foregroundStyle(palette.secondary)
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 6) {
                 ForEach(Quadrant.allCases) { q in
-                    let c = color(for: q)
                     Button { quadrant = quadrant == q ? nil : q } label: {
                         HStack(spacing: 4) {
                             Image(systemName: q.icon).font(.system(size: 10))
-                            Text(label(for: q)).font(.system(size: 11, weight: .medium))
+                            Text(label(for: q)).font(.system(size: 11, weight: .regular))
                         }
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 6)
-                        .background(Capsule().fill(quadrant == q ? c.opacity(0.2) : Color.gray.opacity(0.1)))
-                        .overlay(Capsule().stroke(quadrant == q ? c : Color.gray.opacity(0.3), lineWidth: 1))
-                        .foregroundStyle(quadrant == q ? c : .secondary)
+                        .frame(minHeight: 32)
+                        .background(RoundedRectangle(cornerRadius: 5).fill(quadrant == q ? palette.selection : .clear))
+                        .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(quadrant == q ? palette.accentInk.opacity(0.3) : .clear, lineWidth: 0.5))
+                        .foregroundStyle(quadrant == q ? palette.accentInk : palette.secondary)
+                        .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(GoalControlStyle()).accessibilityAddTraits(quadrant == q ? .isSelected : [])
                 }
             }
         }

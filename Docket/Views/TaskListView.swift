@@ -1,631 +1,229 @@
-// TaskListView.swift
-// Docket — macOS Menu Bar Task Manager
-// Created by @santoru
-
+// Polaris — compact native goal list, following the frozen v5 design.
 import SwiftUI
 import AppKit
 
-/// Shared coordinate-space name for the reorderable task list.
-enum TaskListCoordinateSpace { static let name = "taskList" }
-
-/// Reports each task row's frame (in the list's coordinate space) so the
-/// drag-reorder coordinator can compute insertion indices for variable-height rows.
-struct RowFrameKey: PreferenceKey {
-    static let defaultValue: [UUID: CGRect] = [:]
-    static func reduce(value: inout [UUID: CGRect], nextValue: () -> [UUID: CGRect]) {
-        value.merge(nextValue()) { _, new in new }
-    }
-}
-
-/// Resolves the enclosing NSScrollView so the reorder coordinator can drive
-/// edge auto-scrolling during a drag (SwiftUI offers no offset control on
-/// macOS 14, so we manipulate the AppKit clip view directly).
-struct ScrollViewAccessor: NSViewRepresentable {
-    var onResolve: (NSScrollView) -> Void
-    func makeNSView(context: Context) -> NSView {
-        let v = NSView()
-        DispatchQueue.main.async { if let sv = v.enclosingScrollView { onResolve(sv) } }
-        return v
-    }
-    func updateNSView(_ nsView: NSView, context: Context) {
-        DispatchQueue.main.async { if let sv = nsView.enclosingScrollView { onResolve(sv) } }
-    }
-}
-
-/// Main view showing active tasks with search, sort modes, and swipe actions.
 struct TaskListView: View {
     @Binding var path: [NavDestination]
     var store = Store.shared
-
-    @AppStorage("appTheme") private var themeRaw: Int = AppTheme.white.rawValue
-    @AppStorage("customHue") private var customHue: Double = 0.55
-    @AppStorage("sortMode") private var sortModeRaw: Int = SortMode.custom.rawValue
-
-    @State private var showConfetti = false
-    @State private var searchText = ""
-    @State private var showSearch = false
-    @State private var showSortBar = false
-    @State private var showUndo = false
-    @State private var undoMessage = ""
+    @AppStorage("goalFilter") private var filterRaw = GoalFilter.all.rawValue
+    @AppStorage("panelShortcutsEnabled") private var localKeys = true
+    @AppStorage("showConfetti") private var showConfetti = true
+    @AppStorage("polarisMotionEnabled") private var motion = true
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.polarisPalette) private var palette
+    @Environment(\.polarisNow) private var now
+    @Environment(PolarisPresentation.self) private var presentation
+    @State private var search = ""
+    @State private var selectedID: UUID?
+    @State private var scrollRequest = 0
+    @State private var focusGeneration = 0
+    @State private var actionIndex = 0
     @State private var undoItem: TodoItem?
-    @State private var undoAction: UndoAction = .complete
+    @State private var showUndo = false
     @State private var undoTrigger = 0
-
-    private enum UndoAction { case complete, delete }
-    @AppStorage("showMatrixButton") private var showMatrixButton = true
-    @AppStorage("showCompletedButton") private var showCompletedButton = true
-    @AppStorage("showConfetti") private var confettiEnabled = true
-
-    // Drag-to-reorder state
-    @State private var draggingId: UUID?
-    @State private var dragStartCenterY: CGFloat?
-    @State private var dragTranslationY: CGFloat = 0
-    @State private var liveOrder: [TodoItem]?
-    @State private var rowFrames: [UUID: CGRect] = [:]
-    @State private var dragStartFrame: CGRect?
-    @State private var liftScale: CGFloat = 1.0
-    @State private var showModeToast = false
-
-    // Autoscroll (drives the AppKit clip view while dragging near an edge)
-    @State private var scrollView: NSScrollView?
-    @State private var autoscrollDir: Int = 0          // -1 up, 0 idle, +1 down
-    @State private var autoscrollTimer: Timer?
-    @State private var autoscrollAccumulated: CGFloat = 0
-
-    /// Edge auto-scroll while dragging near the top/bottom of the list.
-    private let autoscrollEnabled = true
-
-    private var accent: Color { ThemeManager.resolvedAccent(themeRaw: themeRaw, customHue: customHue) }
-    private var sortMode: SortMode { SortMode(rawValue: sortModeRaw) ?? .custom }
-
-    private var filteredTasks: [TodoItem] {
-        guard !searchText.isEmpty else { return store.activeTasks }
-        return store.activeTasks.filter {
-            $0.title.localizedCaseInsensitiveContains(searchText) ||
-            $0.notes.localizedCaseInsensitiveContains(searchText)
+    @State private var celebrationTrigger = 0
+    private var filter: GoalFilter { GoalFilter(rawValue: filterRaw) ?? .all }
+    private var items: [TodoItem] {
+        let visible = store.activeTasks.filter { item in
+            filter.includes(item, now: now) && (search.isEmpty || item.title.localizedCaseInsensitiveContains(search) || item.notes.localizedCaseInsensitiveContains(search) || item.steps.contains { $0.title.localizedCaseInsensitiveContains(search) })
         }
+        let mainID = store.menuBarGoal?.id
+        return visible.filter { $0.id == mainID } + visible.filter { $0.id != mainID }
     }
-
-    /// Reorder is allowed only on the full, unfiltered active list — disabled
-    /// while searching or filtering by label (the visible set is partial).
-    private var reorderEnabled: Bool {
-        searchText.isEmpty && store.activeLabelFilter == nil
+    private var displayedItems: [TodoItem] { groups.flatMap { $0.2 } }
+    private var selected: TodoItem? { items.first { $0.id == selectedID } ?? items.first }
+    private var groups: [(String, String, [TodoItem])] {
+        var result: [(String, String, [TodoItem])] = []
+        let pins = items.filter(\.isPinned)
+        if !pins.isEmpty { result.append(("置顶", "PINNED", pins)) }
+        for period in GoalPeriod.allCases {
+            let goals = items.filter { !$0.isPinned && $0.goalPeriod == period }
+            if !goals.isEmpty { result.append((period.title + "目标", period.englishTitle, goals)) }
+        }
+        return result
     }
-
-    /// Tasks shown in custom mode: the live drag order while reordering,
-    /// otherwise the stored/filtered order.
-    private var displayedCustomTasks: [TodoItem] {
-        liveOrder ?? filteredTasks
-    }
-
-    /// Finger position in the list's content space: gesture start + drag
-    /// translation + any distance auto-scrolled while held near an edge.
-    private var fingerContentY: CGFloat {
-        (dragStartCenterY ?? 0) + dragTranslationY + autoscrollAccumulated
-    }
-
+    private var actionsPresented: Binding<Bool> { Binding(get: { presentation.actionsArePresented }, set: { presentation.actionsArePresented = $0 }) }
     var body: some View {
-        ZStack(alignment: .bottom) {
-            VStack(spacing: 0) {
-                header
-                if showSortBar { sortBar }
-                if showSearch { searchBar }
-                taskContent
-            }
-            .overlay(alignment: .top) {
-                if showModeToast {
-                    Text(L10n.switchedToCustom)
-                        .font(.caption.weight(.medium))
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 7)
-                        .background(Capsule().fill(.regularMaterial))
-                        .shadow(color: .black.opacity(0.12), radius: 4, y: 2)
-                        .padding(.top, 8)
-                        .transition(.move(edge: .top).combined(with: .opacity))
-                }
-            }
-            ConfettiOverlay(isActive: $showConfetti)
-            UndoToast(message: undoMessage, trigger: undoTrigger, onUndo: performUndo, isVisible: $showUndo)
-                .padding(.bottom, 8)
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .popoverDidClose)) { _ in
-            withAnimation(.easeOut(duration: 0.15)) {
-                showSearch = false
-                showSortBar = false
-                searchText = ""
-            }
-        }
-    }
-
-    // MARK: - Header
-
-    private var header: some View {
-        HStack(spacing: 8) {
-            VStack(alignment: .leading, spacing: 1) {
-                if store.lists.count > 1 {
-                    Menu {
-                        ForEach(store.lists) { list in
-                            Button {
-                                store.switchList(list)
-                            } label: {
-                                HStack {
-                                    Image(systemName: "circle.fill")
-                                        .foregroundStyle(list.color)
-                                    Text(list.name)
-                                    if list.id == store.activeListId {
-                                        Image(systemName: "checkmark")
-                                    }
-                                }
+        VStack(spacing: 0) {
+            PolarisGlassGroup {
+              HStack(spacing: 9) {
+                Image(systemName: "magnifyingglass").font(.system(size: 13, weight: .light)).foregroundStyle(palette.muted)
+                PolarisSearchField(text: $search, placeholder: "搜索目标…", focusGeneration: focusGeneration,
+                    onMove: moveSelection, onSubmit: editSelected, onEscape: escape, shortcutsEnabled: localKeys)
+                    .frame(height: 25)
+                Menu {
+                    Picker("筛选目标", selection: $filterRaw) {
+                        ForEach(GoalFilter.allCases) { Text(filterTitle($0)).tag($0.rawValue) }
+                    }
+                    if store.lists.count > 1 {
+                        Divider()
+                        ForEach(store.lists) { list in Button(list.name) { store.switchList(list) } }
+                    }
+                } label: { HStack(spacing: 5) { Text(filterTitle(filter)); Image(systemName: "chevron.down").font(.system(size: 8)) }.font(.system(size: 11)).foregroundStyle(palette.secondary) }
+                .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().tint(palette.secondary).accessibilityLabel("筛选目标")
+              }.padding(.horizontal, 10).frame(height: 32).polarisGlassSurface()
+            }.padding(.horizontal, 12).frame(height: 48)
+            Rectangle().fill(palette.line).frame(height: 0.5)
+            ScrollViewReader { proxy in
+                ScrollView(.vertical) {
+                    VStack(spacing: 0) {
+                        if items.isEmpty { emptyState }
+                        ForEach(Array(groups.enumerated()), id: \.offset) { _, group in
+                            PolarisSectionTitle(title: group.0)
+                                .padding(.horizontal, 8).padding(.top, 6).padding(.bottom, 3).frame(minHeight: 24)
+                            ForEach(group.2) { item in
+                                goalRow(item)
                             }
                         }
-                    } label: {
-                        HStack(spacing: 6) {
-                            Circle()
-                                .fill(store.activeList.color)
-                                .frame(width: 8, height: 8)
-                            Text(store.activeList.name).font(.title2.bold())
-                            Image(systemName: "chevron.down").font(.caption.bold()).foregroundStyle(.secondary)
-                        }
-                    }
-                    .buttonStyle(.plain)
-                } else {
-                    Text(L10n.appName).font(.title2.bold())
+                    }.padding(.horizontal, 8).padding(.top, 5).padding(.bottom, 7)
                 }
-                let count = store.activeTasks.count
-                Text(count == 1 ? L10n.oneTask : L10n.taskCount(count))
-                    .font(.caption).foregroundStyle(.secondary)
+                .onChange(of: scrollRequest) { _, _ in if let selectedID { proxy.scrollTo(selectedID) } }
             }
-            Spacer()
-            headerButton(icon: showSortBar ? "checkmark.circle" : "arrow.up.arrow.down",
-                         label: showSortBar ? L10n.a11yHideSortOptions : L10n.a11ySortOptions,
-                         color: showSortBar ? .green : accent) {
-                withAnimation(.spring(duration: 0.25)) { showSortBar.toggle() }
-            }
-            headerButton(icon: "magnifyingglass", label: L10n.a11ySearch, color: accent) {
-                withAnimation(.spring(duration: 0.25)) { showSearch.toggle(); if !showSearch { searchText = "" } }
-            }
-            if showMatrixButton { headerButton(icon: "square.grid.2x2", label: L10n.eisenhowerMatrix, color: accent) { path.append(.matrix) } }
-            if showCompletedButton { headerButton(icon: "tray.full", label: L10n.a11yCompletedTasks, color: accent) { path.append(.completed) } }
-            headerButton(icon: "gear", label: L10n.settings, color: accent) { path.append(.settings) }
-            headerButton(icon: "plus", label: L10n.a11yNewTask, color: .green) { path.append(.create) }
+            Rectangle().fill(palette.line).frame(height: 0.5)
+            footer
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 16)
-        .padding(.bottom, 12)
-    }
-
-    @ViewBuilder
-    private func headerButton(icon: String, label: String, color: Color, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: icon)
-                .font(.body).foregroundStyle(color)
-                .frame(width: 28, height: 28)
-                .background(color.opacity(0.15), in: Circle())
+        .overlay(alignment: .bottom) {
+            UndoToast(message: "目标已达成", trigger: undoTrigger, onUndo: undo, isVisible: $showUndo).padding(.bottom, 38)
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel(label)
-    }
-
-    // MARK: - Sort Bar
-
-    private var sortBar: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 8) {
-                sortPill(L10n.sortCustom, mode: .custom)
-                sortPill(L10n.sortByDueDate, mode: .byDueDate)
-                sortPill(L10n.sortByPriority, mode: .byPriority)
-                Spacer()
+        .overlay { ConfettiOverlay(trigger: celebrationTrigger, enabled: showConfetti && motion) }
+        .onChange(of: showUndo) { _, value in presentation.canUndoCompletion = value }
+        .onAppear { ensureSelection(); focusGeneration += 1 }
+        .onChange(of: items.map(\.id)) { _, _ in ensureSelection() }
+        .onReceive(NotificationCenter.default.publisher(for: .popoverDidOpen)) { _ in focusGeneration += 1; ensureSelection() }
+        .onReceive(NotificationCenter.default.publisher(for: .polarisSelectGoal)) { note in
+            if let id = note.object as? UUID {
+                if !items.contains(where: { $0.id == id }) { filterRaw = GoalFilter.all.rawValue; search = "" }
+                selectedID = id
+                scrollRequest += 1
             }
-            if !store.labelsForActiveList.isEmpty {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 6) {
-                        labelFilterPill(name: "All", color: accent, id: nil)
-                        ForEach(store.labelsForActiveList) { label in
-                            labelFilterPill(name: label.name, color: label.color.adaptedForCurrentScheme(themeRaw: themeRaw), id: label.id)
-                        }
-                    }
-                    .padding(.vertical, 2)
-                    .padding(.horizontal, 1)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .polarisComplete)) { note in if let item = note.object as? TodoItem { complete(item) } }
+        .onReceive(NotificationCenter.default.publisher(for: .polarisCommand)) { note in
+            guard path.isEmpty, let command = note.object as? String else { return }
+            switch command {
+            case "up": if presentation.actionsArePresented { actionIndex = max(0, actionIndex - 1) } else { moveSelection(-1) }
+            case "down": if presentation.actionsArePresented { actionIndex = min(actionCount - 1, actionIndex + 1) } else { moveSelection(1) }
+            case "edit": if presentation.actionsArePresented { performAction(actionIndex) } else { editSelected() }
+            case "actions": actionIndex = 0; presentation.actionsArePresented.toggle()
+            case "escape": escape()
+            case "undo": if showUndo { undo(); showUndo = false }
+            case "pin": if let selected { store.togglePin(selected) }
+            case "complete": if let selected { complete(selected) }
+            default: break
+            }
+        }
+    }
+    private func goalRow(_ item: TodoItem) -> some View {
+        TaskRowView(item: item, onComplete: { complete(item) }, isSelected: selected?.id == item.id,
+            onToggleStep: { stepID in
+                withAnimation(motion && !reduceMotion ? .easeInOut(duration: 0.16) : nil) {
+                    _ = store.toggleStep(goalID: item.id, stepID: stepID)
                 }
+            })
+            .id(item.id)
+            .onTapGesture(count: 2) { selectedID = item.id; editSelected() }
+            .onTapGesture { selectedID = item.id }
+            .onHover { if $0 { selectedID = item.id } }
+            .contextMenu { rowActions(item) }
+            .accessibilityActions {
+                Button("编辑目标") { selectedID = item.id; editSelected() }
+                Button(item.isPinned ? "取消置顶" : "置顶目标") { store.togglePin(item) }
+                Button("标记已达成") { complete(item) }
+                Button("上移") { move(item, by: -1) }.disabled(moveNeighbor(item, by: -1) == nil)
+                Button("下移") { move(item, by: 1) }.disabled(moveNeighbor(item, by: 1) == nil)
             }
-        }
-        .padding(.horizontal, 12)
-        .padding(.bottom, 8)
-        .transition(.move(edge: .top).combined(with: .opacity))
     }
-
-    private func labelFilterPill(name: String, color: Color, id: UUID?) -> some View {
-        let isActive = store.activeLabelFilter == id
-        return Button {
-            withAnimation(.spring(duration: 0.25)) { store.activeLabelFilter = id }
-        } label: {
-            Text(name)
-                .font(.system(size: 10, weight: isActive ? .semibold : .regular))
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(Capsule().fill(isActive ? color.opacity(0.2) : Color.clear))
-                .overlay(Capsule().stroke(isActive ? color : Color.secondary.opacity(0.3), lineWidth: 1))
-                .foregroundStyle(isActive ? color : .secondary)
-        }
-        .buttonStyle(.plain)
+    private func filterTitle(_ filter: GoalFilter) -> String { filter.title }
+    private var footer: some View {
+        PolarisFooter(isActive: path.isEmpty, onNew: { path.append(.create()) }, onEdit: editAction,
+            onSettings: { path.append(.settings) },
+            onActions: { actionIndex = 0; presentation.actionsArePresented.toggle() })
+            .popover(isPresented: actionsPresented, arrowEdge: .bottom) { actionMenu }
     }
-
-    private func sortPill(_ label: String, mode: SortMode) -> some View {
-        Button {
-            withAnimation(.spring(duration: 0.25)) { sortModeRaw = mode.rawValue }
-        } label: {
-            Text(label)
-                .font(.caption.weight(sortMode == mode ? .semibold : .regular))
-                .padding(.horizontal, 10)
-                .padding(.vertical, 5)
-                .background(
-                    Capsule().fill(sortMode == mode ? accent : .clear)
-                )
-                .foregroundStyle(sortMode == mode ? .white : .secondary)
-                .overlay(Capsule().stroke(sortMode == mode ? Color.clear : Color.secondary.opacity(0.3), lineWidth: 1))
-        }
-        .buttonStyle(.plain)
+    private var editAction: (() -> Void)? {
+        guard selected != nil else { return nil }
+        return { editSelected() }
     }
-
-    // MARK: - Search Bar
-
-    private var searchBar: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "magnifyingglass").foregroundStyle(.secondary).font(.caption)
-            TextField(L10n.searchPlaceholder, text: $searchText).textFieldStyle(.plain).font(.body)
-            if !searchText.isEmpty {
-                Button { searchText = "" } label: {
-                    Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
-                }.buttonStyle(.plain)
-            }
-        }
-        .padding(8)
-        .background(RoundedRectangle(cornerRadius: 8).fill(.regularMaterial))
-        
-        .padding(.horizontal, 12)
-        .padding(.bottom, 8)
-        .transition(.move(edge: .top).combined(with: .opacity))
-    }
-
-    // MARK: - Task Content
-
-    @ViewBuilder
-    private var taskContent: some View {
-        if store.activeTasks.isEmpty {
-            emptyState
-        } else if !searchText.isEmpty && filteredTasks.isEmpty {
-            noResultsState
-        } else {
-            unifiedList
-        }
-    }
-
     private var emptyState: some View {
-        VStack {
-            Spacer()
-            VStack(spacing: 10) {
-                Image(systemName: "checkmark.seal").font(.system(size: 36)).foregroundStyle(.tertiary)
-                Text(L10n.allClear).font(.body).foregroundStyle(.secondary)
-                Button { path.append(.create) } label: {
-                    Text(L10n.addFirstTask)
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(accent)
-                }.buttonStyle(.plain)
+        VStack(spacing: 9) {
+            Image(nsImage: PolarisSymbol.menuImage()).opacity(0.6)
+            Text(search.isEmpty ? "留给重要的目标" : "没有匹配的目标").font(.system(size: 14))
+            Text(search.isEmpty ? "写下第一件值得记住的事。" : "试试其他关键词。").font(.system(size: 12)).foregroundStyle(palette.muted)
+            if search.isEmpty { Button("新建目标") { path.append(.create()) }.buttonStyle(.plain).foregroundStyle(palette.accentInk) }
+        }.frame(maxWidth: .infinity).frame(height: 150)
+    }
+    private var actionCount: Int { selected == nil ? 1 : 5 }
+    private var actionMenu: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(selected?.title ?? "Polaris").font(.system(size: 11)).foregroundStyle(palette.muted).lineLimit(2).padding(10)
+            if let item = selected {
+                actionRow("编辑目标", "pencil", 0, "↵")
+                actionRow(item.isPinned ? "取消置顶" : "置顶目标", "pin", 1, "⌘ P")
+                actionRow(store.menuBarGoal?.id == item.id ? "从菜单栏移除" : "设为菜单栏主目标", "menubar.rectangle", 2, "")
+                actionRow("标记已达成", "checkmark.circle", 3, "")
+                Divider().padding(.vertical, 3)
             }
-            Spacer()
-        }
+            actionRow("新建目标", "plus", actionCount - 1, "⌘ N")
+        }.padding(6).frame(width: 270).background(palette.raised)
     }
-
-    private var noResultsState: some View {
-        VStack {
-            Spacer()
-            VStack(spacing: 10) {
-                Image(systemName: "magnifyingglass").font(.system(size: 36)).foregroundStyle(.tertiary)
-                Text(L10n.noResults).font(.body).foregroundStyle(.secondary)
-                Text(L10n.noResultsDetail(searchText))
-                    .font(.caption).foregroundStyle(.tertiary)
-                    .lineLimit(1).truncationMode(.middle)
-            }
-            .padding(.horizontal, 24)
-            Spacer()
-        }
+    private func actionRow(_ title: String, _ icon: String, _ index: Int, _ shortcut: String) -> some View {
+        Button { performAction(index) } label: {
+            HStack(spacing: 10) { Image(systemName: icon).frame(width: 14); Text(title); Spacer(); if localKeys && !shortcut.isEmpty { PolarisKeycap(text: shortcut) } }
+                .font(.system(size: 12.5)).foregroundStyle(palette.ink).padding(.horizontal, 9).frame(height: 34)
+                .background(actionIndex == index ? palette.selection : .clear, in: RoundedRectangle(cornerRadius: 5))
+        }.buttonStyle(.plain).onHover { if $0 { actionIndex = index } }
     }
-
-    // MARK: - Unified List
-
-    /// A flat list item: either a due-date section header or a task. Keeping
-    /// everything in one LazyVStack (rather than separate grouped/custom views)
-    /// means a row's identity — and any in-flight reorder gesture — survives
-    /// when a drag switches the sort from By Due Date to Custom.
-    private struct ListRow: Identifiable {
-        enum Kind { case header(title: String, color: String); case task(TodoItem) }
-        let id: String
-        let kind: Kind
+    private func performAction(_ index: Int) {
+        presentation.actionsArePresented = false
+        guard let selected, index < 4 else { path.append(.create()); return }
+        switch index { case 0: editSelected(); case 1: store.togglePin(selected); case 2: feature(selected); case 3: complete(selected); default: break }
     }
-
-    /// The section grouping for the current non-custom sort mode (nil in Custom).
-    private var currentGroups: [(title: String, color: String, tasks: [TodoItem])]? {
-        switch sortMode {
-        case .byDueDate: return store.groupedByDueDate
-        case .byPriority: return store.groupedByPriority
-        case .custom: return nil
-        }
+    @ViewBuilder private func rowActions(_ item: TodoItem) -> some View {
+        Button("编辑目标") { selectedID = item.id; editSelected() }
+        Button(item.isPinned ? "取消置顶" : "置顶目标") { store.togglePin(item) }
+        Button("设为菜单栏主目标") { store.featureInMenuBar(item) }
+        Button("标记已达成") { complete(item) }
+        Divider()
+        Button("上移") { move(item, by: -1) }.disabled(moveNeighbor(item, by: -1) == nil); Button("下移") { move(item, by: 1) }.disabled(moveNeighbor(item, by: 1) == nil)
     }
-
-    private var listRows: [ListRow] {
-        // While dragging we are always in Custom (the drag switched us there),
-        // so render the flat custom order with no section headers.
-        if let groups = currentGroups, searchText.isEmpty, draggingId == nil {
-            var rows: [ListRow] = []
-            for group in groups {
-                rows.append(ListRow(id: "header-\(group.title)", kind: .header(title: group.title, color: group.color)))
-                rows.append(contentsOf: group.tasks.map { ListRow(id: $0.id.uuidString, kind: .task($0)) })
-            }
-            return rows
-        } else {
-            return displayedCustomTasks.map { ListRow(id: $0.id.uuidString, kind: .task($0)) }
-        }
+    private func feature(_ item: TodoItem) {
+        if store.menuBarGoal?.id == item.id { UserDefaults.standard.set("none", forKey: "menuBarGoalID"); NotificationCenter.default.post(name: .goalBoardChanged, object: nil) }
+        else { store.featureInMenuBar(item) }
     }
-
-    private var unifiedList: some View {
-        VScroll {
-            VStack(spacing: 8) {
-                ForEach(listRows) { row in
-                    switch row.kind {
-                    case .header(let title, let color):
-                        sectionHeader(title: title, color: sectionColor(color))
-                    case .task(let item):
-                        taskRow(item)
-                    }
-                }
-            }
-            .padding(.horizontal, 12)
-            .padding(.top, 4)
-            .padding(.bottom, 12)
-            .coordinateSpace(name: TaskListCoordinateSpace.name)
-            .background(ScrollViewAccessor { scrollView = $0 })
-            .onPreferenceChange(RowFrameKey.self) { rowFrames = $0 }
-            .animation(.spring(duration: 0.28), value: draggingId)
-            .overlay(alignment: .topLeading) { floatingCard }
-        }
+    private func ensureSelection() { if !items.contains(where: { $0.id == selectedID }) { selectedID = items.first?.id } }
+    private func moveSelection(_ offset: Int) {
+        guard !items.isEmpty else { return }
+        let ordered = displayedItems
+        let index = ordered.firstIndex { $0.id == selected?.id } ?? 0
+        selectedID = ordered[min(ordered.count - 1, max(0, index + offset))].id
+        scrollRequest += 1
     }
-
-    /// The lifted card, drawn as a floating copy that tracks the cursor with pure
-    /// translation (instant follow). The real row stays in the list as an
-    /// invisible placeholder so the other rows part around the insertion point.
-    @ViewBuilder
-    private var floatingCard: some View {
-        if let id = draggingId,
-           let item = (liveOrder ?? filteredTasks).first(where: { $0.id == id }),
-           let f = dragStartFrame {
-            TaskRowView(item: item, onComplete: {})
-                .frame(width: f.width, height: f.height)
-                .scaleEffect(liftScale)
-                .shadow(color: .black.opacity(0.18), radius: 8, y: 4)
-                .offset(x: f.minX, y: f.minY + dragTranslationY + autoscrollAccumulated)
-                .allowsHitTesting(false)
-                .onAppear {
-                    // Grow smoothly into the lifted size instead of popping in.
-                    withAnimation(.spring(duration: 0.22, bounce: 0.35)) { liftScale = 1.03 }
-                }
-        }
+    private func moveNeighbor(_ item: TodoItem, by delta: Int) -> UUID? {
+        let primaryID = store.menuBarGoal?.id
+        guard item.id != primaryID,
+              let group = groups.first(where: { $0.2.contains(where: { $0.id == item.id }) })?.2.filter({ $0.id != primaryID }),
+              let index = group.firstIndex(where: { $0.id == item.id }),
+              group.indices.contains(index + delta) else { return nil }
+        return group[index + delta].id
     }
-
-    @ViewBuilder
-    private func taskRow(_ item: TodoItem) -> some View {
-        let lifted = draggingId == item.id
-        SwipeableTaskRow(
-            item: item,
-            reorderEnabled: reorderEnabled,
-            isLifted: lifted,
-            onComplete: { completeItem(item) },
-            onDelete: { deleteItem(item) },
-            onTap: { path.append(.detail(item)) },
-            onReorderBegin: { beginReorder(item) },
-            onReorderChange: { updateReorder(translationY: $0) },
-            onReorderEnd: { endReorder() }
-        )
-        .background(
-            GeometryReader { geo in
-                Color.clear.preference(
-                    key: RowFrameKey.self,
-                    value: [item.id: geo.frame(in: .named(TaskListCoordinateSpace.name))]
-                )
-            }
-        )
-        // While lifted, this row is an invisible placeholder holding the gap (and
-        // the gesture); the floating overlay draws the actual card at the cursor.
-        .opacity(lifted ? 0 : 1)
-        .accessibilityActions {
-            if reorderEnabled && sortMode == .custom {
-                Button(L10n.moveUp) { moveByAccessibility(item, by: -1) }
-                Button(L10n.moveDown) { moveByAccessibility(item, by: 1) }
-            }
-        }
+    private func move(_ item: TodoItem, by delta: Int) {
+        // Move within the visible group; hidden goals and other periods keep their order.
+        guard let neighborID = moveNeighbor(item, by: delta) else { return }
+        var ids = store.activeTasks.map(\.id)
+        guard let source = ids.firstIndex(of: item.id), let target = ids.firstIndex(of: neighborID) else { return }
+        ids.swapAt(source, target); store.applyManualOrder(ids)
     }
-
-    private func sectionHeader(title: String, color: Color) -> some View {
-        HStack(spacing: 6) {
-            Circle().fill(color).frame(width: 8, height: 8)
-            Text(title).font(.caption.weight(.semibold)).foregroundStyle(color)
-            Rectangle().fill(color.opacity(0.3)).frame(height: 0.5)
-        }
-        .padding(.top, 4)
+    private func editSelected() { showUndo = false; presentation.canUndoCompletion = false; undoItem = nil; if let selected { presentation.actionsArePresented = false; path.append(.detail(selected)) } }
+    private func escape() {
+        if presentation.actionsArePresented { presentation.actionsArePresented = false }
+        else if !search.isEmpty { search = "" }
+        else { AppDelegate.shared?.closePopover() }
     }
-
-    private func sectionColor(_ name: String) -> Color {
-        switch name {
-        case "red": .red
-        case "orange": .orange
-        case "blue": .blue
-        default: .gray
-        }
+    private func complete(_ item: TodoItem) {
+        guard store.items.contains(where: { $0.id == item.id && !$0.isCompleted }) else { return }
+        guard store.complete(item) else { return }
+        undoItem = item; showUndo = true
+        presentation.canUndoCompletion = true; undoTrigger += 1; celebrationTrigger += 1
     }
-
-    // MARK: - Reorder
-
-    private func beginReorder(_ item: TodoItem) {
-        guard reorderEnabled else { return }
-        if sortMode != .custom {
-            // Adopt the currently-visible grouped order as the explicit custom
-            // order, then switch to Custom so the drag continues in a flat list.
-            let flat = (currentGroups ?? []).flatMap { $0.tasks }
-            store.applyManualOrder(flat.map(\.id))
-            sortModeRaw = SortMode.custom.rawValue
-            showModeToastBriefly()
-        }
-        draggingId = item.id
-        dragStartCenterY = rowFrames[item.id]?.midY
-        dragStartFrame = rowFrames[item.id]
-        dragTranslationY = 0
-        autoscrollAccumulated = 0
-        liveOrder = displayedCustomTasks
-        if autoscrollEnabled { startAutoscrollTimer() }
-    }
-
-    private func showModeToastBriefly() {
-        withAnimation(.spring(duration: 0.25)) { showModeToast = true }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-            withAnimation(.easeOut(duration: 0.2)) { showModeToast = false }
-        }
-    }
-
-    private func updateReorder(translationY: CGFloat) {
-        guard let id = draggingId else { return }
-        if dragStartCenterY == nil { dragStartCenterY = rowFrames[id]?.midY }
-        dragTranslationY = translationY
-        applyReorderTarget()
-        if autoscrollEnabled { updateAutoscrollZone() }
-    }
-
-    /// Move the dragged item to the insertion index implied by `fingerContentY`,
-    /// so the other rows part to make room as the card is dragged over them.
-    private func applyReorderTarget() {
-        guard let id = draggingId, var order = liveOrder else { return }
-        let y = fingerContentY
-        var target = 0
-        for t in order where t.id != id {
-            if let f = rowFrames[t.id], f.midY < y { target += 1 }
-        }
-        guard let current = order.firstIndex(where: { $0.id == id }) else { return }
-        if current != target {
-            let moved = order.remove(at: current)
-            order.insert(moved, at: min(target, order.count))
-            withAnimation(.spring(duration: 0.25)) { liveOrder = order }
-        }
-    }
-
-    private func endReorder() {
-        stopAutoscroll()
-        guard draggingId != nil else { return }   // idempotent — watchdog may also call this
-        if let order = liveOrder {
-            store.applyManualOrder(order.map(\.id))
-        }
-        withAnimation(.spring(duration: 0.25)) { draggingId = nil }
-        dragStartCenterY = nil
-        dragStartFrame = nil
-        liftScale = 1.0
-        dragTranslationY = 0
-        autoscrollAccumulated = 0
-        liveOrder = nil
-    }
-
-    // MARK: - Autoscroll
-
-    /// Decide whether the cursor is in the top/bottom edge band of the visible
-    /// scroll area. Compares the cursor's content-space position against the
-    /// scroll view's visible rect — both in the document's coordinate space, so
-    /// it stays correct no matter how far the list is scrolled.
-    private func updateAutoscrollZone() {
-        guard let sv = scrollView else { autoscrollDir = 0; return }
-        let visible = sv.contentView.documentVisibleRect
-        guard visible.height > 0 else { autoscrollDir = 0; return }
-        let band: CGFloat = 50
-        let y = fingerContentY
-        if y < visible.minY + band { autoscrollDir = -1 }
-        else if y > visible.maxY - band { autoscrollDir = 1 }
-        else { autoscrollDir = 0 }
-    }
-
-    private func startAutoscrollTimer() {
-        autoscrollTimer?.invalidate()
-        autoscrollAccumulated = 0
-        // .common mode so the timer keeps firing during gesture event tracking.
-        let t = Timer(timeInterval: 1.0 / 60.0, repeats: true) { _ in stepAutoscroll() }
-        RunLoop.main.add(t, forMode: .common)
-        autoscrollTimer = t
-    }
-
-    private func stepAutoscroll() {
-        guard autoscrollDir != 0, let sv = scrollView else { return }
-        let clip = sv.contentView
-        let flipped = sv.documentView?.isFlipped ?? true
-        let speed: CGFloat = 9
-        let maxY = max(0, (sv.documentView?.frame.height ?? 0) - clip.bounds.height)
-        let current = clip.bounds.origin.y
-        // Map intent (-1 up / +1 down) to clip-space direction (depends on flip).
-        let clipDir: CGFloat = (flipped ? 1 : -1) * CGFloat(autoscrollDir)
-        let proposed = min(max(0, current + clipDir * speed), maxY)
-        let delta = proposed - current
-        guard abs(delta) > 0.01 else { return }
-        clip.scroll(to: NSPoint(x: clip.bounds.origin.x, y: proposed))
-        sv.reflectScrolledClipView(clip)
-        // Content-space finger advances in the intent direction by the amount scrolled.
-        autoscrollAccumulated += CGFloat(autoscrollDir) * abs(delta)
-        applyReorderTarget()
-    }
-
-    private func stopAutoscroll() {
-        autoscrollTimer?.invalidate()
-        autoscrollTimer = nil
-        autoscrollDir = 0
-    }
-
-    /// VoiceOver / keyboard fallback for reordering without a drag.
-    private func moveByAccessibility(_ item: TodoItem, by delta: Int) {
-        let tasks = filteredTasks
-        guard let idx = tasks.firstIndex(where: { $0.id == item.id }) else { return }
-        let target = idx + delta
-        guard target >= 0, target < tasks.count else { return }
-        var order = tasks
-        let moved = order.remove(at: idx)
-        order.insert(moved, at: target)
-        withAnimation(.spring(duration: 0.25)) { store.applyManualOrder(order.map(\.id)) }
-    }
-
-    // MARK: - Actions
-
-    private func completeItem(_ item: TodoItem) {
-        if confettiEnabled { showConfetti = true }
-        undoItem = item
-        undoAction = .complete
-        undoMessage = L10n.taskCompleted
-        undoTrigger += 1
-        withAnimation(.spring(duration: 0.3)) {
-            store.complete(item)
-            showUndo = true
-        }
-    }
-
-    private func deleteItem(_ item: TodoItem) {
-        undoItem = item
-        undoAction = .delete
-        undoMessage = L10n.taskDeleted
-        undoTrigger += 1
-        withAnimation(.spring(duration: 0.3)) {
-            store.delete(item)
-            showUndo = true
-        }
-    }
-
-    private func performUndo() {
-        guard let item = undoItem else { return }
-        withAnimation(.spring(duration: 0.3)) {
-            switch undoAction {
-            case .complete: store.restore(item)
-            case .delete: store.add(item)
-            }
-        }
-        undoItem = nil
-    }
+    private func undo() { presentation.canUndoCompletion = false; if let undoItem { store.undoCompletion(undoItem) }; undoItem = nil }
 }

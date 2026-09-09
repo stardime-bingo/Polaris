@@ -1,54 +1,29 @@
-// RecurrencePickerView.swift
-// Docket — macOS Menu Bar Task Manager
-// Created by @santoru
-
 import SwiftUI
 
-/// Picker for task recurrence (repeat frequency and interval).
 struct RecurrencePickerView: View {
     @Binding var hasRecurrence: Bool
     @Binding var frequency: Frequency
     @Binding var interval: Int
-
-    @AppStorage("appTheme") private var themeRaw: Int = AppTheme.white.rawValue
-    @AppStorage("customHue") private var customHue: Double = 0.55
-    private var accent: Color { ThemeManager.resolvedAccent(themeRaw: themeRaw, customHue: customHue) }
-
+    @Environment(\.polarisPalette) private var palette
+    private var selection: Binding<Frequency?> {
+        Binding(get: { hasRecurrence ? frequency : nil }, set: { value in
+            if let value { hasRecurrence = true; frequency = value }
+            else { hasRecurrence = false }
+        })
+    }
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            ThemedToggle(label: L10n.repeatLabel, isOn: $hasRecurrence, animated: true)
+        HStack(spacing: 12) {
+            Text("重复").font(.system(size: 12.5)).foregroundStyle(palette.secondary).frame(width: 52, alignment: .leading)
+            Picker("重复周期", selection: selection) {
+                Text("不重复").tag(nil as Frequency?)
+                ForEach(Frequency.allCases) { value in Text(value.displayName).tag(Optional(value)) }
+            }.labelsHidden().pickerStyle(.menu).controlSize(.small)
+                .frame(maxWidth: .infinity, minHeight: 36, alignment: .trailing).accessibilityLabel("重复周期")
             if hasRecurrence {
-                HStack {
-                    Text(L10n.every).font(.body)
-                    Spacer()
-                    Menu {
-                        ForEach(1...10, id: \.self) { n in
-                            Button("\(n)") { interval = n }
-                        }
-                    } label: {
-                        Text("\(interval)")
-                            .font(.system(size: 12, weight: .semibold))
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 5)
-                            .background(RoundedRectangle(cornerRadius: 6).fill(accent.opacity(0.12)))
-                            .foregroundStyle(accent)
-                    }
-                    .buttonStyle(.plain)
-
-                    Menu {
-                        ForEach(Frequency.allCases) { f in
-                            Button(f.displayName) { frequency = f }
-                        }
-                    } label: {
-                        Text(interval == 1 ? frequency.unit : frequency.unitPlural)
-                            .font(.system(size: 12, weight: .semibold))
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 5)
-                            .background(RoundedRectangle(cornerRadius: 6).fill(accent.opacity(0.12)))
-                            .foregroundStyle(accent)
-                    }
-                    .buttonStyle(.plain)
-                }
+                Stepper(value: $interval, in: 1...99) {
+                    Text("每 \(interval) \(frequency.unit)").font(.system(size: 11.5)).monospacedDigit()
+                }.controlSize(.small).frame(width: 110)
+                    .foregroundStyle(palette.secondary).accessibilityLabel("重复间隔")
             }
         }
     }

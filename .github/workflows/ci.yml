@@ -1,0 +1,43 @@
+name: Build and tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  macos:
+    runs-on: macos-26
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - name: Toolchain
+        run: |
+          xcodebuild -version
+          xcrun --sdk macosx --show-sdk-version
+          swiftc --version
+      - name: Logic checks
+        run: ./run-tests.sh
+      - name: Step persistence
+        run: ./script/test_step_persistence.sh
+      - name: Fictional demo data
+        run: python3 script/make_demo_data.py "$RUNNER_TEMP/polaris-demo"
+      - name: Build local application
+        run: ./build.sh
+      - name: Verify local signature
+        run: codesign --verify --deep --strict build/Polaris.app
+      - name: Build Xcode project
+        run: >-
+          xcodebuild -project Docket.xcodeproj -scheme Docket
+          -configuration Release -derivedDataPath build/DerivedData
+          CODE_SIGNING_ALLOWED=NO build

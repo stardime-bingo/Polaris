@@ -47,7 +47,7 @@
 		688FF0242FE2A27100147993 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = 688FEFFB2FE2A27100147993 /* Localizable.strings */; };
 		688FF0252FE2A27100147993 /* menubar-icon@2x.png in Resources */ = {isa = PBXBuildFile; fileRef = 688FEFFD2FE2A27100147993 /* menubar-icon@2x.png */; };
 		688FF0262FE2A27100147993 /* menubar-icon.png in Resources */ = {isa = PBXBuildFile; fileRef = 688FEFFC2FE2A27100147993 /* menubar-icon.png */; };
-		688FF0272FE2A27100147993 /* icon.icns in Resources */ = {isa = PBXBuildFile; fileRef = 688FEFF82FE2A27100147993 /* icon.icns */; };
+		688FF0272FE2A27100147993 /* PolarisAB.icon in Resources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000010 /* PolarisAB.icon */; };
 		688FF0292FE2A27100147993 /* TipJar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 688FF02A2FE2A27100147993 /* TipJar.swift */; };
 		688FF02B2FE2A27100147993 /* TipJarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 688FF02C2FE2A27100147993 /* TipJarView.swift */; };
 		688FF02D2FE2A27100147993 /* ColorPalette.swift in Sources */ = {isa = PBXBuildFile; fileRef = 688FF02E2FE2A27100147993 /* ColorPalette.swift */; };
@@ -60,10 +60,29 @@
 		688FF03B2FE2A27100147993 /* IconPickerButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 688FF03C2FE2A27100147993 /* IconPickerButton.swift */; };
 		688FF03D2FE2A27100147993 /* HotkeyMapping.swift in Sources */ = {isa = PBXBuildFile; fileRef = 688FF03E2FE2A27100147993 /* HotkeyMapping.swift */; };
 		68E978132FE9DCDF002CA246 /* Docket.storekit in Resources */ = {isa = PBXBuildFile; fileRef = 68E978122FE9DCDF002CA246 /* Docket.storekit */; };
+		AB0000000000000000000000 /* GoalPeriod.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000000 /* GoalPeriod.swift */; };
+		AB0000000000000000000015 /* NavDestination.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000015 /* NavDestination.swift */; };
+		AB0000000000000000000001 /* GoalBoardRules.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000001 /* GoalBoardRules.swift */; };
+		AB0000000000000000000002 /* PolarisSymbol.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000002 /* PolarisSymbol.swift */; };
+		AB0000000000000000000003 /* GoalEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000003 /* GoalEditorView.swift */; };
+		AB0000000000000000000004 /* GoalScheduleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000004 /* GoalScheduleView.swift */; };
+		AB000000000000000000000A /* PolarisAppearance.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000000000000000000000A /* PolarisAppearance.swift */; };
+		AB000000000000000000000B /* GoalDateParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000000000000000000000B /* GoalDateParser.swift */; };
+		AB000000000000000000000C /* PolarisSearchField.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000000000000000000000C /* PolarisSearchField.swift */; };
+		AB000000000000000000000D /* PolarisSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000000000000000000000D /* PolarisSettingsView.swift */; };
+		AB000000000000000000000E /* PolarisLogo.png in Resources */ = {isa = PBXBuildFile; fileRef = AA000000000000000000000E /* PolarisLogo.png */; };
+		AB000000000000000000000F /* GoalImportPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000000000000000000000F /* GoalImportPlan.swift */; };
+		AB0000000000000000000011 /* GoalEditorControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000011 /* GoalEditorControls.swift */; };
+		AB0000000000000000000012 /* GoalChecklistView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000012 /* GoalChecklistView.swift */; };
+		AB0000000000000000000013 /* GoalEditorOptionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000013 /* GoalEditorOptionsView.swift */; };
+		AB0000000000000000000014 /* ShortcutRecorderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000014 /* ShortcutRecorderView.swift */; };
+		CD000000000000000000001F /* PolarisChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC000000000000000000001F /* PolarisChrome.swift */; };
+		CD0000000000000000000020 /* PolarisActivityView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC0000000000000000000020 /* PolarisActivityView.swift */; };
+		CD0000000000000000000021 /* PolarisMenuActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC0000000000000000000021 /* PolarisMenuActivity.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		688FEFC22FE2A24200147993 /* Docket.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Docket.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		688FEFC22FE2A24200147993 /* Polaris.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Polaris.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		688FEFD02FE2A27100147993 /* AppTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppTheme.swift; sourceTree = "<group>"; };
 		688FEFD12FE2A27100147993 /* MatrixLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MatrixLayout.swift; sourceTree = "<group>"; };
 		688FEFD22FE2A27100147993 /* Quadrant.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Quadrant.swift; sourceTree = "<group>"; };
@@ -119,6 +138,27 @@
 		688FF03C2FE2A27100147993 /* IconPickerButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IconPickerButton.swift; sourceTree = "<group>"; };
 		688FF03E2FE2A27100147993 /* HotkeyMapping.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HotkeyMapping.swift; sourceTree = "<group>"; };
 		68E978122FE9DCDF002CA246 /* Docket.storekit */ = {isa = PBXFileReference; lastKnownFileType = text; path = Docket.storekit; sourceTree = "<group>"; };
+		AA0000000000000000000000 /* GoalPeriod.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoalPeriod.swift; sourceTree = "<group>"; };
+		AA0000000000000000000015 /* NavDestination.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NavDestination.swift; sourceTree = "<group>"; };
+		AA0000000000000000000001 /* GoalBoardRules.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoalBoardRules.swift; sourceTree = "<group>"; };
+		AA0000000000000000000002 /* PolarisSymbol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PolarisSymbol.swift; sourceTree = "<group>"; };
+		AA0000000000000000000003 /* GoalEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoalEditorView.swift; sourceTree = "<group>"; };
+		AA0000000000000000000004 /* GoalScheduleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoalScheduleView.swift; sourceTree = "<group>"; };
+		AC0000000000000000000001 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/Localizable.strings"; sourceTree = "<group>"; };
+		AA000000000000000000000A /* PolarisAppearance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PolarisAppearance.swift; sourceTree = "<group>"; };
+		AA000000000000000000000B /* GoalDateParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoalDateParser.swift; sourceTree = "<group>"; };
+		AA000000000000000000000C /* PolarisSearchField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PolarisSearchField.swift; sourceTree = "<group>"; };
+		AA000000000000000000000D /* PolarisSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PolarisSettingsView.swift; sourceTree = "<group>"; };
+		AA000000000000000000000E /* PolarisLogo.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = PolarisLogo.png; sourceTree = "<group>"; };
+		AA000000000000000000000F /* GoalImportPlan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoalImportPlan.swift; sourceTree = "<group>"; };
+		AA0000000000000000000010 /* PolarisAB.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = PolarisAB.icon; sourceTree = "<group>"; };
+		AA0000000000000000000011 /* GoalEditorControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoalEditorControls.swift; sourceTree = "<group>"; };
+		AA0000000000000000000012 /* GoalChecklistView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoalChecklistView.swift; sourceTree = "<group>"; };
+		AA0000000000000000000013 /* GoalEditorOptionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoalEditorOptionsView.swift; sourceTree = "<group>"; };
+		AA0000000000000000000014 /* ShortcutRecorderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShortcutRecorderView.swift; sourceTree = "<group>"; };
+		CC000000000000000000001F /* PolarisChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PolarisChrome.swift; sourceTree = "<group>"; };
+		CC0000000000000000000020 /* PolarisActivityView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PolarisActivityView.swift; sourceTree = "<group>"; };
+		CC0000000000000000000021 /* PolarisMenuActivity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PolarisMenuActivity.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -144,7 +184,7 @@
 		688FEFC32FE2A24200147993 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				688FEFC22FE2A24200147993 /* Docket.app */,
+				688FEFC22FE2A24200147993 /* Polaris.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -152,6 +192,9 @@
 		688FEFDA2FE2A27100147993 /* Models */ = {
 			isa = PBXGroup;
 			children = (
+				AA000000000000000000000A /* PolarisAppearance.swift */,
+				AA0000000000000000000000 /* GoalPeriod.swift */,
+				AA0000000000000000000015 /* NavDestination.swift */,
 				688FEFD02FE2A27100147993 /* AppTheme.swift */,
 				688FF03E2FE2A27100147993 /* HotkeyMapping.swift */,
 				688FF02E2FE2A27100147993 /* ColorPalette.swift */,
@@ -172,6 +215,11 @@
 		688FEFE02FE2A27100147993 /* Services */ = {
 			isa = PBXGroup;
 			children = (
+				AA000000000000000000000F /* GoalImportPlan.swift */,
+				AA000000000000000000000B /* GoalDateParser.swift */,
+				AA0000000000000000000002 /* PolarisSymbol.swift */,
+				CC0000000000000000000021 /* PolarisMenuActivity.swift */,
+				AA0000000000000000000001 /* GoalBoardRules.swift */,
 				688FEFDB2FE2A27100147993 /* DateParser.swift */,
 				688FEFDC2FE2A27100147993 /* DueDateFormatter.swift */,
 				688FEFDD2FE2A27100147993 /* NotificationManager.swift */,
@@ -185,6 +233,16 @@
 		688FEFF62FE2A27100147993 /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				AA000000000000000000000D /* PolarisSettingsView.swift */,
+				AA000000000000000000000C /* PolarisSearchField.swift */,
+				AA0000000000000000000004 /* GoalScheduleView.swift */,
+				AA0000000000000000000003 /* GoalEditorView.swift */,
+				AA0000000000000000000014 /* ShortcutRecorderView.swift */,
+				AA0000000000000000000013 /* GoalEditorOptionsView.swift */,
+				AA0000000000000000000012 /* GoalChecklistView.swift */,
+				CC0000000000000000000020 /* PolarisActivityView.swift */,
+				CC000000000000000000001F /* PolarisChrome.swift */,
+				AA0000000000000000000011 /* GoalEditorControls.swift */,
 				688FEFE12FE2A27100147993 /* CalendarPickerView.swift */,
 				688FF0322FE2A27100147993 /* ColorPickerGrid.swift */,
 				688FF0382FE2A27100147993 /* ColorSwatchButton.swift */,
@@ -225,6 +283,8 @@
 				688FEFE02FE2A27100147993 /* Services */,
 				688FEFF62FE2A27100147993 /* Views */,
 				688FEFF72FE2A27100147993 /* DocketApp.swift */,
+				AA0000000000000000000010 /* PolarisAB.icon */,
+				AA000000000000000000000E /* PolarisLogo.png */,
 				688FEFF82FE2A27100147993 /* icon.icns */,
 				688FEFFB2FE2A27100147993 /* Localizable.strings */,
 				688FEFFC2FE2A27100147993 /* menubar-icon.png */,
@@ -252,7 +312,7 @@
 			packageProductDependencies = (
 			);
 			productName = Docket;
-			productReference = 688FEFC22FE2A24200147993 /* Docket.app */;
+			productReference = 688FEFC22FE2A24200147993 /* Polaris.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -271,12 +331,13 @@
 				};
 			};
 			buildConfigurationList = 688FEFBD2FE2A24200147993 /* Build configuration list for PBXProject "Docket" */;
-			developmentRegion = en;
+			developmentRegion = "zh-Hans";
 			hasScannedForEncodings = 0;
 			knownRegions = (
 				en,
 				Base,
 				it,
+				"zh-Hans",
 			);
 			mainGroup = 688FEFB92FE2A24200147993;
 			minimizedProjectReferenceProxies = 1;
@@ -299,7 +360,8 @@
 				688FF0252FE2A27100147993 /* menubar-icon@2x.png in Resources */,
 				688FF0262FE2A27100147993 /* menubar-icon.png in Resources */,
 				68E978132FE9DCDF002CA246 /* Docket.storekit in Resources */,
-				688FF0272FE2A27100147993 /* icon.icns in Resources */,
+				AB000000000000000000000E /* PolarisLogo.png in Resources */,
+				688FF0272FE2A27100147993 /* PolarisAB.icon in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -310,6 +372,24 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				AB000000000000000000000D /* PolarisSettingsView.swift in Sources */,
+				AB000000000000000000000C /* PolarisSearchField.swift in Sources */,
+				AB000000000000000000000F /* GoalImportPlan.swift in Sources */,
+				AB000000000000000000000B /* GoalDateParser.swift in Sources */,
+				AB000000000000000000000A /* PolarisAppearance.swift in Sources */,
+				AB0000000000000000000004 /* GoalScheduleView.swift in Sources */,
+				AB0000000000000000000003 /* GoalEditorView.swift in Sources */,
+				AB0000000000000000000014 /* ShortcutRecorderView.swift in Sources */,
+				AB0000000000000000000013 /* GoalEditorOptionsView.swift in Sources */,
+				AB0000000000000000000012 /* GoalChecklistView.swift in Sources */,
+				CD0000000000000000000021 /* PolarisMenuActivity.swift in Sources */,
+				CD0000000000000000000020 /* PolarisActivityView.swift in Sources */,
+				CD000000000000000000001F /* PolarisChrome.swift in Sources */,
+				AB0000000000000000000011 /* GoalEditorControls.swift in Sources */,
+				AB0000000000000000000002 /* PolarisSymbol.swift in Sources */,
+				AB0000000000000000000001 /* GoalBoardRules.swift in Sources */,
+				AB0000000000000000000000 /* GoalPeriod.swift in Sources */,
+				AB0000000000000000000015 /* NavDestination.swift in Sources */,
 				688FEFFF2FE2A27100147993 /* MatrixLayout.swift in Sources */,
 				688FF0002FE2A27100147993 /* UndoToast.swift in Sources */,
 				688FF0012FE2A27100147993 /* DocketApp.swift in Sources */,
@@ -369,6 +449,7 @@
 			children = (
 				688FEFF92FE2A27100147993 /* en */,
 				688FEFFA2FE2A27100147993 /* it */,
+				AC0000000000000000000001 /* zh-Hans */,
 			);
 			name = Localizable.strings;
 			sourceTree = "<group>";
@@ -411,7 +492,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = dwarf;
-				DEVELOPMENT_TEAM = G6Q9554M9R;
+				DEVELOPMENT_TEAM = "";
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
@@ -475,7 +556,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
-				DEVELOPMENT_TEAM = G6Q9554M9R;
+				DEVELOPMENT_TEAM = "";
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
@@ -499,34 +580,36 @@
 		688FEFCE2FE2A24400147993 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = "";
-				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_APPICON_NAME = PolarisAB;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = "";
 				CODE_SIGN_ENTITLEMENTS = Docket/Docket.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 3;
-				DEVELOPMENT_TEAM = G6Q9554M9R;
+				CURRENT_PROJECT_VERSION = 22;
+				DEVELOPMENT_TEAM = "";
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Docket/Info.plist;
-				INFOPLIST_KEY_CFBundleIconFile = icon;
-				INFOPLIST_KEY_CFBundleIconName = "";
+				INFOPLIST_KEY_CFBundleIconFile = PolarisAB;
+				INFOPLIST_KEY_CFBundleIconName = PolarisAB;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2026 @santoru. All rights reserved.";
-				INFOPLIST_KEY_NSRemindersFullAccessUsageDescription = "Docket syncs your tasks with Apple Reminders for iCloud, Siri, and Apple Watch support.";
-				INFOPLIST_KEY_NSRemindersUsageDescription = "Docket syncs your tasks with Apple Reminders for iCloud, Siri, and Apple Watch support.";
+				INFOPLIST_KEY_NSRemindersFullAccessUsageDescription = "Polaris 可将目标同步到 Apple 提醒事项，以便通过 iCloud、Siri 和 Apple Watch 查看。";
+				INFOPLIST_KEY_NSRemindersUsageDescription = "Polaris 可将目标同步到 Apple 提醒事项，以便通过 iCloud、Siri 和 Apple Watch 查看。";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 1.12.1;
-				PRODUCT_BUNDLE_IDENTIFIER = blog.insecurity.Docket;
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				MARKETING_VERSION = 1.4.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.bingowu.polaris;
+				PRODUCT_NAME = Polaris;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) DOCKET_SELFBUILD";
+				INFOPLIST_KEY_CFBundleDisplayName = Polaris;
 				REGISTER_APP_GROUPS = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -540,34 +623,36 @@
 		688FEFCF2FE2A24400147993 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = "";
-				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_APPICON_NAME = PolarisAB;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = "";
 				CODE_SIGN_ENTITLEMENTS = Docket/Docket.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 3;
-				DEVELOPMENT_TEAM = G6Q9554M9R;
+				CURRENT_PROJECT_VERSION = 22;
+				DEVELOPMENT_TEAM = "";
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Docket/Info.plist;
-				INFOPLIST_KEY_CFBundleIconFile = icon;
-				INFOPLIST_KEY_CFBundleIconName = "";
+				INFOPLIST_KEY_CFBundleIconFile = PolarisAB;
+				INFOPLIST_KEY_CFBundleIconName = PolarisAB;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2026 @santoru. All rights reserved.";
-				INFOPLIST_KEY_NSRemindersFullAccessUsageDescription = "Docket syncs your tasks with Apple Reminders for iCloud, Siri, and Apple Watch support.";
-				INFOPLIST_KEY_NSRemindersUsageDescription = "Docket syncs your tasks with Apple Reminders for iCloud, Siri, and Apple Watch support.";
+				INFOPLIST_KEY_NSRemindersFullAccessUsageDescription = "Polaris 可将目标同步到 Apple 提醒事项，以便通过 iCloud、Siri 和 Apple Watch 查看。";
+				INFOPLIST_KEY_NSRemindersUsageDescription = "Polaris 可将目标同步到 Apple 提醒事项，以便通过 iCloud、Siri 和 Apple Watch 查看。";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 1.12.1;
-				PRODUCT_BUNDLE_IDENTIFIER = blog.insecurity.Docket;
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				MARKETING_VERSION = 1.4.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.bingowu.polaris;
+				PRODUCT_NAME = Polaris;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) DOCKET_SELFBUILD";
+				INFOPLIST_KEY_CFBundleDisplayName = Polaris;
 				REGISTER_APP_GROUPS = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;

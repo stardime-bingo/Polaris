@@ -9,6 +9,53 @@ import CoreGraphics
 /// resolver. Extracted from `MatrixView` so the algorithm can be unit-tested
 /// without instantiating any SwiftUI view.
 enum MatrixLayout {
+    // The title and count occupy the top of every quadrant, outside the drop area.
+    static let headerHeight: CGFloat = 28
+
+    enum DropTarget: Equatable {
+        case quadrant(Quadrant)
+        case unassigned
+    }
+
+    /// Direct manipulation follows the released pointer, without fling prediction.
+    static func dropTarget(from quadrant: Quadrant, releasePoint: CGPoint, in size: CGSize) -> DropTarget {
+        guard size.width > 0, size.height > 0 else { return .quadrant(quadrant) }
+        let left = releasePoint.x < 0, right = releasePoint.x > size.width
+        let top = releasePoint.y < 0, bottom = releasePoint.y > size.height
+        let topRow = quadrant == .doFirst || quadrant == .schedule
+        let belowGrid = topRow ? size.height * 2 + 4 + 30 : size.height + 30
+        if releasePoint.y > belowGrid { return .unassigned }
+
+        let target: Quadrant
+        switch quadrant {
+        case .doFirst:
+            target = right && bottom ? .eliminate : right ? .schedule : bottom ? .delegate : quadrant
+        case .schedule:
+            target = left && bottom ? .delegate : left ? .doFirst : bottom ? .eliminate : quadrant
+        case .delegate:
+            target = right && top ? .schedule : right ? .eliminate : top ? .doFirst : quadrant
+        case .eliminate:
+            target = left && top ? .doFirst : left ? .delegate : top ? .schedule : quadrant
+        }
+        return .quadrant(target)
+    }
+
+    /// Shared by restored positions, collision layout, and actual drag release.
+    static func clampedPosition(_ point: CGPoint, in size: CGSize, maxChars: Int, lineCount: Int) -> CGPoint {
+        guard size.width > 0, size.height > 0 else { return .zero }
+        let limits = centerBounds(pill: pillSize(maxChars: maxChars, lineCount: lineCount, in: size.width), in: size)
+        return clampPoint(point, xMin: limits.minX, xMax: limits.maxX, yMin: limits.minY, yMax: limits.maxY)
+    }
+
+    private static func centerBounds(pill: CGSize, in size: CGSize) -> CGRect {
+        let pad: CGFloat = 4
+        let xMin = pill.width / 2 + pad
+        let yMin = headerHeight + pill.height / 2 + pad
+        return CGRect(x: xMin, y: yMin,
+                      width: max(1, size.width - pill.width / 2 - pad - xMin),
+                      height: max(1, size.height - pill.height / 2 - pad - yMin))
+    }
+
     /// The expected on-screen size of a task pill, given the current settings
     /// and the available quadrant width. Both the view and the resolver use
     /// these dimensions so positioning math stays in sync with what's drawn.
@@ -36,11 +83,9 @@ enum MatrixLayout {
         }
 
         let pill = pillSize(maxChars: maxChars, lineCount: lineCount, in: size.width)
-        let pad: CGFloat = 4
-        let xMin = pill.width / 2 + pad
-        let xMax = max(xMin + 1, size.width - pill.width / 2 - pad)
-        let yMin = pill.height / 2 + pad
-        let yMax = max(yMin + 1, size.height - pill.height / 2 - pad)
+        let limits = centerBounds(pill: pill, in: size)
+        let xMin = limits.minX, xMax = limits.maxX
+        let yMin = limits.minY, yMax = limits.maxY
 
         // Inflate rects by 2pt before intersection-testing so pills never visually touch.
         let inflate: CGFloat = 2

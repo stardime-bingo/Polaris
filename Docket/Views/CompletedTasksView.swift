@@ -1,78 +1,41 @@
-// CompletedTasksView.swift
-// Docket — macOS Menu Bar Task Manager
-// Created by @santoru
-
+// Docket — created by @santoru; adapted for Polaris.
 import SwiftUI
 
-/// Shows completed tasks with the ability to restore them.
 struct CompletedTasksView: View {
     @Binding var path: [NavDestination]
     var store = Store.shared
-
-    @AppStorage("appTheme") private var themeRaw: Int = AppTheme.white.rawValue
-    @AppStorage("customHue") private var customHue: Double = 0.55
-    @AppStorage("useGlass") private var useGlass = true
-
-    private var accent: Color { ThemeManager.resolvedAccent(themeRaw: themeRaw, customHue: customHue) }
-
+    @Environment(\.polarisPalette) private var palette
+    @Environment(\.polarisNow) private var now
     var body: some View {
         VStack(spacing: 0) {
-            header
-            Divider()
-
+            HStack {
+                Button { path.removeLast() } label: { Image(systemName: "chevron.left").frame(width: 32, height: 32) }.buttonStyle(GoalControlStyle()).accessibilityLabel("返回设置")
+                Spacer(); Text("已达成目标").font(.system(size: 12.5, weight: .medium)); Spacer()
+                Text("\(store.completedTasks.count)").font(.system(size: 11)).foregroundStyle(palette.muted).frame(width: 24)
+            }.padding(.horizontal, 13).frame(height: 48)
+            palette.line.frame(height: 0.5)
             if store.completedTasks.isEmpty {
                 Spacer()
-                VStack(spacing: 8) {
-                    Image(systemName: "tray").font(.system(size: 36)).foregroundStyle(.tertiary)
-                    Text(L10n.nothingHere).font(.body).foregroundStyle(.secondary)
-                }
+                VStack(spacing: 10) { Image(systemName: "checkmark.circle").font(.system(size: 22, weight: .light)); Text("值得记住的达成，会留在这里").font(.system(size: 12.5)) }.foregroundStyle(palette.muted)
                 Spacer()
             } else {
-                VScroll {
-                    LazyVStack(spacing: 8) {
+                ScrollView {
+                    LazyVStack(spacing: 0) {
                         ForEach(store.completedTasks) { item in
-                            HStack(spacing: 12) {
-                                Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(item.title).font(.body).strikethrough().foregroundStyle(.secondary)
-                                    if let done = item.completedAt {
-                                        Text(done, style: .relative)
-                                            .font(.caption).foregroundStyle(.tertiary)
-                                    }
+                            HStack(alignment: .top, spacing: 10) {
+                                Image(systemName: "checkmark").font(.system(size: 11)).foregroundStyle(palette.muted).frame(width: 18, height: 22)
+                                VStack(alignment: .leading, spacing: 5) {
+                                    Text(item.title).font(.system(size: 14)).foregroundStyle(palette.secondary).fixedSize(horizontal: false, vertical: true)
+                                    if let done = item.completedAt { Text("达成于 " + DueDateFormatter.format(done, now: now)).font(.system(size: 10.5)).foregroundStyle(palette.muted) }
                                 }
-                                Spacer()
-                                Button { withAnimation { store.restore(item) } } label: {
-                                    Image(systemName: "arrow.uturn.backward.circle").foregroundStyle(accent)
-                                }.buttonStyle(.plain)
-                            }
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 10)
-                            .background(
-                                RoundedRectangle(cornerRadius: 10)
-                                    .fill(useGlass ? AnyShapeStyle(.regularMaterial) : AnyShapeStyle(ThemeManager.resolvedCardBackground(themeRaw: themeRaw)))
-                            )
-                            .overlay(useGlass ? nil : RoundedRectangle(cornerRadius: 10).stroke(.quaternary, lineWidth: 0.5))
+                                Spacer(minLength: 6)
+                                Button { store.restore(item) } label: { Image(systemName: "arrow.uturn.backward").font(.system(size: 12)).foregroundStyle(palette.secondary).frame(width: 24, height: 24) }.buttonStyle(.plain).help("恢复目标").accessibilityLabel("恢复目标：" + item.title)
+                            }.padding(.vertical, 14)
+                            palette.line.frame(height: 0.5)
                         }
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.top, 8)
-                }
+                    }.padding(.horizontal, 20)
+                }.scrollIndicators(.hidden)
             }
         }
-    }
-
-    private var header: some View {
-        HStack {
-            Button { path.removeLast() } label: {
-                Image(systemName: "chevron.left").font(.system(size: 13, weight: .semibold)).foregroundStyle(.secondary).frame(width: 28, height: 28).background(Circle().fill(.quaternary.opacity(0.5)))
-            }.buttonStyle(.plain)
-            Spacer()
-            Text(L10n.completed).font(.headline)
-            Text("(\(store.completedTasks.count))").font(.caption).foregroundStyle(.secondary)
-            Spacer()
-            Button { path.removeLast() } label: { Image(systemName: "checkmark").font(.system(size: 13, weight: .semibold)).foregroundStyle(.secondary).frame(width: 28, height: 28).background(Circle().fill(.quaternary.opacity(0.5))) }.buttonStyle(.plain)
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
     }
 }

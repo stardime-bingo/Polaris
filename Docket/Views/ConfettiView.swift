@@ -1,65 +1,56 @@
-// ConfettiView.swift
-// Docket — macOS Menu Bar Task Manager
-// Created by @santoru
-
 import SwiftUI
 
-/// A single confetti particle.
-private struct Piece: Identifiable {
-    let id = UUID()
-    let x: CGFloat
-    let color: Color
-    let size: CGFloat
-    let rotation: Double
-    let drift: CGFloat
-}
-
-/// Overlay that bursts confetti downward from the top when `isActive` becomes true.
+/// A short, finite celebration. No display link runs while the app is idle.
 struct ConfettiOverlay: View {
-    @Binding var isActive: Bool
+    let trigger: Int
+    let enabled: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.polarisPalette) private var palette
     @State private var pieces: [Piece] = []
-    @State private var animate = false
+    @State private var falling = false
+    @State private var lastHandledTrigger = 0
 
-    private static let colors: [Color] = [.red, .orange, .yellow, .green, .blue, .purple, .pink, .mint]
+    private struct Piece: Identifiable {
+        let id: Int
+        let x: CGFloat
+        let drift: CGFloat
+        let size: CGFloat
+        let rotation: Double
+    }
 
     var body: some View {
-        GeometryReader { geo in
+        GeometryReader { geometry in
             ZStack {
-                ForEach(pieces) { p in
+                ForEach(pieces) { piece in
                     RoundedRectangle(cornerRadius: 1)
-                        .fill(p.color)
-                        .frame(width: p.size, height: p.size * 0.6)
-                        .rotationEffect(.degrees(animate ? p.rotation + 360 : p.rotation))
-                        .offset(
-                            x: (geo.size.width / 2) + p.x + (animate ? p.drift : 0),
-                            y: animate ? geo.size.height * 0.6 : 40
-                        )
-                        .opacity(animate ? 0 : 1)
+                        .fill(piece.id.isMultiple(of: 3) ? palette.accentInk : palette.ink.opacity(0.7))
+                        .frame(width: piece.size, height: piece.size * 0.45)
+                        .rotationEffect(.degrees(piece.rotation + (falling ? 180 : 0)))
+                        .position(x: geometry.size.width / 2 + piece.x + (falling ? piece.drift : 0),
+                                  y: falling ? geometry.size.height * 0.8 : 16)
+                        .opacity(falling ? 0 : 0.9)
                 }
             }
         }
+        .clipped()
         .allowsHitTesting(false)
-        .onChange(of: isActive) { _, active in
-            if active { fire() }
-        }
-    }
-
-    private func fire() {
-        pieces = (0..<25).map { _ in
-            Piece(
-                x: .random(in: -120...120),
-                color: Self.colors.randomElement()!,
-                size: .random(in: 4...7),
-                rotation: .random(in: 0...360),
-                drift: .random(in: -40...40)
-            )
-        }
-        animate = false
-        withAnimation(.easeOut(duration: 1.0)) { animate = true }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.1) {
+        .accessibilityHidden(true)
+        .task(id: "\(trigger)-\(enabled)-\(reduceMotion)") {
             pieces = []
-            animate = false
-            isActive = false
+            falling = false
+            guard trigger > lastHandledTrigger else { return }
+            lastHandledTrigger = trigger
+            guard enabled, !reduceMotion else { return }
+            pieces = (0..<24).map { Piece(id: $0, x: .random(in: -100...100), drift: .random(in: -35...35), size: .random(in: 4...7), rotation: .random(in: 0...180)) }
+            do {
+                try await Task.sleep(for: .milliseconds(60))
+                withAnimation(.easeOut(duration: 1.35)) { falling = true }
+                try await Task.sleep(for: .milliseconds(1400))
+                pieces = []
+                falling = false
+            } catch {
+                // Navigation or another completion cancels this burst.
+            }
         }
     }
 }

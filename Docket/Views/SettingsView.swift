@@ -14,48 +14,27 @@ struct SettingsView: View {
     @Binding var path: [NavDestination]
     var store = Store.shared
 
-    @AppStorage("defaultReminderOffset") private var defaultOffset: Int = ReminderOffset.tenMinutes.rawValue
+    @AppStorage("defaultReminderOffset") private var defaultOffset: Int = ReminderOffset.none.rawValue
     @AppStorage("launchAtLogin") private var launchAtLogin = false
-    @AppStorage("useGlass") private var useGlass = true
     @AppStorage("notifSound") private var notifSound = "default"
     @AppStorage("badgeAllLists") private var badgeAllLists = false
     @AppStorage("multiLineTask") private var multiLineTask = false
     @AppStorage("showConfetti") private var showConfetti = true
-    @AppStorage("hotkeyEnabled") private var hotkeyEnabled = true
-    @AppStorage("hotkeyKeyCode") private var hotkeyKeyCode = kVK_ANSI_D
-    @AppStorage("hotkeyModifiers") private var hotkeyModifiers = Int(cmdKey | shiftKey)
     @AppStorage("appTheme") private var themeRaw: Int = AppTheme.white.rawValue
     @AppStorage("customHue") private var customHue: Double = 0.55
     @AppStorage("customSat") private var customSat: Double = 0.3
 
-    private var hotkeyLabel: String {
-        var parts: [String] = []
-        let mods = UInt32(hotkeyModifiers)
-        if mods & UInt32(cmdKey) != 0 { parts.append("⌘") }
-        if mods & UInt32(shiftKey) != 0 { parts.append("⇧") }
-        if mods & UInt32(optionKey) != 0 { parts.append("⌥") }
-        if mods & UInt32(controlKey) != 0 { parts.append("⌃") }
-        let keys: [Int: String] = [
-            kVK_ANSI_D: "D", kVK_ANSI_T: "T", kVK_ANSI_K: "K",
-            kVK_ANSI_J: "J", kVK_ANSI_N: "N", kVK_ANSI_O: "O"
-        ]
-        parts.append(keys[hotkeyKeyCode] ?? "D")
-        return parts.joined()
-    }
-
     var body: some View {
         VStack(spacing: 0) {
             header
-            Divider()
+            palette.line.frame(height: 0.5)
             VScroll {
                 ScrollViewReader { proxy in
                 VStack(spacing: 12) {
                     groupHeader(L10n.groupGeneral, first: true)
                     generalSection
-                    hotkeySection
 
                     groupHeader(L10n.groupAppearance)
-                    themeSection
                     displaySection
                     matrixSection
 
@@ -77,9 +56,9 @@ struct SettingsView: View {
                     #endif
 
                     VStack(spacing: 4) {
-                        Text("Docket v\(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0.0")")
+                        Text("Polaris v\(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0.0")")
                             .font(.caption).foregroundStyle(.tertiary)
-                        Link("github.com/santoru/docket", destination: URL(string: "https://github.com/santoru/docket")!)
+                        Link("基于 Docket 开源项目 · @santoru", destination: URL(string: "https://github.com/santoru/docket")!)
                             .font(.caption).foregroundStyle(.secondary)
                     }
                     .padding(.top, 12)
@@ -91,6 +70,12 @@ struct SettingsView: View {
                 } // ScrollViewReader
             }
         }
+        .onAppear {
+            if !DocketRuntime.isPreview {
+                launchAtLogin = SMAppService.mainApp.status == .enabled || SMAppService.mainApp.status == .requiresApproval
+            }
+        }
+        .alert("Polaris", isPresented: $showDataFeedback) { Button("好", role: .cancel) {} } message: { Text(dataFeedback ?? "") }
         .alert(L10n.deleteListTitle, isPresented: $showDeleteConfirm) {
             Button(L10n.delete, role: .destructive) {
                 if let list = listToDelete { withAnimation { store.deleteList(list) } }
@@ -104,7 +89,7 @@ struct SettingsView: View {
         }
         .alert(L10n.clearCompletedTitle, isPresented: $showClearConfirm) {
             Button(L10n.clearNTasks(store.completedTasks.count), role: .destructive) {
-                withAnimation { store.clearCompleted() }
+                withAnimation { _ = store.clearCompleted() }
             }
             Button(L10n.cancel, role: .cancel) {}
         } message: {
@@ -126,82 +111,50 @@ struct SettingsView: View {
     private var header: some View {
         HStack {
             Button { path.removeLast() } label: {
-                Image(systemName: "chevron.left").font(.system(size: 13, weight: .semibold)).foregroundStyle(.secondary).frame(width: 28, height: 28).background(Circle().fill(.quaternary.opacity(0.5)))
-            }.buttonStyle(.plain)
+                Image(systemName: "chevron.left").frame(width: 32, height: 32).contentShape(Rectangle())
+            }.buttonStyle(GoalControlStyle()).accessibilityLabel("返回设置")
             Spacer()
-            Text(L10n.settings).font(.headline)
+            Text("更多设置").font(.system(size: 12.5, weight: .medium))
             Spacer()
-            Button { path.removeLast() } label: { Image(systemName: "checkmark").font(.system(size: 13, weight: .semibold)).foregroundStyle(.secondary).frame(width: 28, height: 28).background(Circle().fill(.quaternary.opacity(0.5))) }.buttonStyle(.plain)
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+            Color.clear.frame(width: 32, height: 32)
+        }.padding(.horizontal, 13).frame(height: 48)
     }
 
     // MARK: - Sections
 
-    private var accent: Color { ThemeManager.resolvedAccent(themeRaw: themeRaw, customHue: customHue) }
+    @Environment(\.polarisPalette) private var palette
+    private var accent: Color { palette.accentInk }
 
     private var reminderSection: some View {
         card {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(spacing: 0) {
                 HStack {
-                    Text(L10n.defaultReminder).font(.subheadline)
+                    Text(L10n.defaultReminder)
                     Spacer()
-                    Menu {
-                        ForEach(ReminderOffset.allCases) { r in
-                            Button(r.displayName) { defaultOffset = r.rawValue }
-                        }
-                    } label: {
-                        Text((ReminderOffset(rawValue: defaultOffset) ?? .tenMinutes).displayName)
-                            .font(.system(size: 12, weight: .semibold))
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 5)
-                            .background(RoundedRectangle(cornerRadius: 6).fill(accent.opacity(0.12)))
-                            .foregroundStyle(accent)
-                    }
-                    .buttonStyle(.plain)
-                }
-                Divider()
+                    Picker(L10n.defaultReminder, selection: $defaultOffset) {
+                        ForEach(ReminderOffset.allCases) { Text($0.displayName).tag($0.rawValue) }
+                    }.labelsHidden()
+                }.frame(minHeight: 36)
+                palette.line.frame(height: 0.5)
                 HStack {
-                    Text(L10n.sound).font(.subheadline)
+                    Text(L10n.sound)
                     Spacer()
-                    Menu {
-                        Button(L10n.soundDefault) { setSound("default") }
-                        Button("Ping") { setSound("Ping") }
-                        Button("Glass") { setSound("Glass") }
-                        Button("Pop") { setSound("Pop") }
-                        Button("Purr") { setSound("Purr") }
-                        Button("Submarine") { setSound("Submarine") }
-                        Button("Tink") { setSound("Tink") }
-                        Button(L10n.soundNone) { setSound("none") }
-                    } label: {
-                        Text(notifSound == "default" ? L10n.soundDefault : notifSound == "none" ? L10n.soundNone : notifSound)
-                            .font(.system(size: 12, weight: .semibold))
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 5)
-                            .background(RoundedRectangle(cornerRadius: 6).fill(accent.opacity(0.12)))
-                            .foregroundStyle(accent)
-                    }
-                    .buttonStyle(.plain)
-                }
-                Divider()
+                    Picker(L10n.sound, selection: Binding(get: { notifSound }, set: setSound)) {
+                        Text(L10n.soundDefault).tag("default")
+                        ForEach(["Ping", "Glass", "Pop", "Purr", "Submarine", "Tink"], id: \.self) { Text($0).tag($0) }
+                        Text(L10n.soundNone).tag("none")
+                    }.labelsHidden()
+                }.frame(minHeight: 36)
+                palette.line.frame(height: 0.5)
                 HStack {
-                    Text(L10n.badgeCounts).font(.subheadline)
+                    Text("到期计数范围")
                     Spacer()
-                    Menu {
-                        Button(L10n.currentList) { badgeAllLists = false }
-                        Button(L10n.allLists) { badgeAllLists = true }
-                    } label: {
-                        Text(badgeAllLists ? L10n.allLists : L10n.currentList)
-                            .font(.system(size: 12, weight: .semibold))
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 5)
-                            .background(RoundedRectangle(cornerRadius: 6).fill(accent.opacity(0.12)))
-                            .foregroundStyle(accent)
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
+                    Picker("到期计数范围", selection: $badgeAllLists) {
+                        Text(L10n.currentList).tag(false)
+                        Text(L10n.allLists).tag(true)
+                    }.labelsHidden()
+                }.frame(minHeight: 36)
+            }.font(.system(size: 12.5)).pickerStyle(.menu).controlSize(.small)
         }
     }
 
@@ -219,44 +172,34 @@ struct SettingsView: View {
     private var generalSection: some View {
         card {
             VStack(alignment: .leading, spacing: 10) {
-                ThemedToggle(label: L10n.launchAtLogin, isOn: $launchAtLogin)
-                    .onChange(of: launchAtLogin) { _, on in
-                        if on { try? SMAppService.mainApp.register() }
-                        else { SMAppService.mainApp.unregister { _ in } }
-                    }
-                Divider()
-                ThemedToggle(label: L10n.multiLineTasks, isOn: $multiLineTask)
+                ThemedToggle(label: L10n.launchAtLogin, isOn: Binding(get: { launchAtLogin }, set: setLaunchAtLogin))
+                    .disabled(DocketRuntime.isPreview)
+                if !DocketRuntime.isPreview, SMAppService.mainApp.status == .requiresApproval {
+                    Button("在系统设置中允许登录启动") { SMAppService.openSystemSettingsLoginItems() }
+                        .buttonStyle(.plain).font(.caption).foregroundStyle(accent)
+                }
+                palette.line.frame(height: 0.5)
+                Text("标题自动换行，页面尺寸一致，长内容在面板内滚动。")
+                    .font(.caption).foregroundStyle(.secondary)
             }
         }
     }
 
-    private var hotkeySection: some View {
-        card {
-            VStack(alignment: .leading, spacing: 8) {
-                Text(L10n.keyboard).font(.body.weight(.medium))
-                ThemedToggle(label: L10n.globalShortcut, isOn: $hotkeyEnabled)
-                    .onChange(of: hotkeyEnabled) { _, _ in AppDelegate.shared?.registerHotkey() }
-                if hotkeyEnabled {
-                    HStack {
-                        Text(L10n.shortcut).font(.subheadline)
-                        Spacer()
-                        Menu {
-                            Button("⌘⇧D") { setHotkey(kVK_ANSI_D, Int(cmdKey | shiftKey)) }
-                            Button("⌘⇧T") { setHotkey(kVK_ANSI_T, Int(cmdKey | shiftKey)) }
-                            Button("⌘⇧K") { setHotkey(kVK_ANSI_K, Int(cmdKey | shiftKey)) }
-                            Button("⌃⌥D") { setHotkey(kVK_ANSI_D, Int(controlKey | optionKey)) }
-                            Button("⌃⌥T") { setHotkey(kVK_ANSI_T, Int(controlKey | optionKey)) }
-                            Button("⌘⌥D") { setHotkey(kVK_ANSI_D, Int(cmdKey | optionKey)) }
-                        } label: {
-                            Text(hotkeyLabel)
-                                .font(.system(size: 13, weight: .semibold, design: .monospaced))
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 5)
-                                .background(RoundedRectangle(cornerRadius: 6).fill(accent.opacity(0.12)))
-                                .foregroundStyle(accent)
-                        }
-                        .buttonStyle(.plain)
-                    }
+    private func setLaunchAtLogin(_ enabled: Bool) {
+        guard !DocketRuntime.isPreview else { return }
+        if enabled {
+            do {
+                try SMAppService.mainApp.register()
+                launchAtLogin = SMAppService.mainApp.status == .enabled || SMAppService.mainApp.status == .requiresApproval
+            } catch {
+                launchAtLogin = SMAppService.mainApp.status == .enabled
+                reportData("未能设置登录启动：\(error.localizedDescription)")
+            }
+        } else {
+            SMAppService.mainApp.unregister { error in
+                DispatchQueue.main.async {
+                    launchAtLogin = SMAppService.mainApp.status == .enabled || SMAppService.mainApp.status == .requiresApproval
+                    if let error { reportData("未能关闭登录启动：\(error.localizedDescription)") }
                 }
             }
         }
@@ -267,33 +210,57 @@ struct SettingsView: View {
     @AppStorage("remindersSyncEnabled") private var remindersSyncEnabled = false
     @State private var availableCalendars: [EKCalendar] = []
     @State private var syncedCalendarIds: Set<String> = []
+    @State private var restoringSyncAccess = false
 
     private var remindersSection: some View {
         card {
             VStack(alignment: .leading, spacing: 10) {
-                Text(L10n.remindersSync).font(.body.weight(.medium))
+                Text(L10n.remindersSync).font(.system(size: 12.5, weight: .medium))
                 ThemedToggle(label: L10n.syncWithReminders, isOn: $remindersSyncEnabled)
+                    .disabled(DocketRuntime.isPreview)
                     .onChange(of: remindersSyncEnabled) { _, on in
                         if on { enableSync() } else { disableSync() }
                     }
 
+                if DocketRuntime.isPreview {
+                    Text("预览使用独立数据，不连接 Apple 提醒事项。").font(.caption).foregroundStyle(.secondary)
+                }
                 if remindersSyncEnabled {
                     if availableCalendars.isEmpty {
-                        Text(L10n.noRemindersAccess).font(.caption).foregroundStyle(.secondary)
+                        if !RemindersSync.shared.isAuthorized {
+                            Text(L10n.noRemindersAccess).font(.caption).foregroundStyle(.secondary)
+                            Button(restoringSyncAccess ? "正在请求授权…" : "重新授权") {
+                                restoringSyncAccess = true
+                                Task {
+                                    defer { restoringSyncAccess = false }
+                                    if await RemindersSync.shared.requestAccess() {
+                                        loadSyncState()
+                                        RemindersSync.shared.pullChanges(for: store.lists.filter { $0.remindersCalendarId != nil })
+                                    }
+                                }
+                            }.disabled(restoringSyncAccess)
+                            Text("恢复系统访问权限，保留已选择的同步列表。").font(.caption).foregroundStyle(.secondary)
+                        } else {
+                            Text("当前没有可用的提醒事项列表。").font(.caption).foregroundStyle(.secondary)
+                        }
                     } else {
                         VStack(alignment: .leading, spacing: 6) {
-                            Text(L10n.listsToSync).font(.caption).foregroundStyle(.secondary)
+                            Text("选择要双向同步的列表；修改、达成和删除也会同步。").font(.caption).foregroundStyle(.secondary)
                             ForEach(availableCalendars, id: \.calendarIdentifier) { cal in
                                 HStack(spacing: 8) {
                                     Image(systemName: syncedCalendarIds.contains(cal.calendarIdentifier) ? "checkmark.circle.fill" : "circle")
                                         .foregroundStyle(syncedCalendarIds.contains(cal.calendarIdentifier) ? accent : .secondary)
                                         .font(.body)
-                                    Text(cal.title).font(.subheadline)
+                                    Text(cal.title).font(.system(size: 12.5))
                                     Spacer()
                                 }
                                 .contentShape(Rectangle())
                                 .onTapGesture { toggleCalendar(cal) }
                             }
+                        }
+
+                        if let error = RemindersSync.shared.lastError {
+                            Text(error).font(.caption).foregroundStyle(accent)
                         }
 
                         if let lastSync = RemindersSync.shared.lastSyncDate {
@@ -322,36 +289,12 @@ struct SettingsView: View {
             let granted = await RemindersSync.shared.requestAccess()
             if granted {
                 availableCalendars = RemindersSync.shared.availableCalendars()
-                // Link the default/active list to a Reminders calendar
-                let defaultList = store.lists.first(where: { $0.isDefault }) ?? store.lists[0]
-                let calName = defaultList.name == "Default" ? "Docket" : defaultList.name
-
-                // Check if calendar already exists
-                if let existing = availableCalendars.first(where: { $0.title == calName }) {
-                    // Link existing calendar to default list
-                    if let i = store.lists.firstIndex(where: { $0.id == defaultList.id }) {
-                        store.lists[i].remindersCalendarId = existing.calendarIdentifier
-                    }
-                    syncedCalendarIds.insert(existing.calendarIdentifier)
-                } else if let newCal = RemindersSync.shared.findOrCreateCalendar(named: calName) {
-                    if let i = store.lists.firstIndex(where: { $0.id == defaultList.id }) {
-                        store.lists[i].remindersCalendarId = newCal.calendarIdentifier
-                    }
-                    syncedCalendarIds.insert(newCal.calendarIdentifier)
-                }
-
-                // Also link any other Docket lists that have matching Reminders calendars
-                for j in store.lists.indices where store.lists[j].remindersCalendarId == nil && !store.lists[j].isDefault {
-                    if let match = availableCalendars.first(where: { $0.title == store.lists[j].name }) {
-                        store.lists[j].remindersCalendarId = match.calendarIdentifier
-                        syncedCalendarIds.insert(match.calendarIdentifier)
-                    }
-                }
-
-                RemindersSync.shared.startObserving()
+                // Enabling access does not select or upload a user's goal set.
+                syncedCalendarIds = []
+                for index in store.lists.indices { store.lists[index].remindersCalendarId = nil }
                 saveSyncedIds()
                 store.persist()
-                RemindersSync.shared.syncAll()
+                RemindersSync.shared.startObserving()
             } else {
                 remindersSyncEnabled = false
             }
@@ -361,6 +304,8 @@ struct SettingsView: View {
     private func disableSync() {
         RemindersSync.shared.stopObserving()
         syncedCalendarIds.removeAll()
+        for index in store.lists.indices { store.lists[index].remindersCalendarId = nil }
+        store.persist()
         saveSyncedIds()
     }
 
@@ -377,6 +322,7 @@ struct SettingsView: View {
             linkCalendar(cal)
         }
         saveSyncedIds()
+        store.persist()
         RemindersSync.shared.syncAll()
     }
 
@@ -422,17 +368,20 @@ struct SettingsView: View {
         card {
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
-                    Text(L10n.lists).font(.body.weight(.medium))
+                    Text(L10n.lists).font(.system(size: 12.5, weight: .medium))
                     Spacer()
                     Button {
+                        let existing = Set(store.lists.map(\.id))
                         store.addList(name: L10n.newList)
-                        editingName = L10n.newList
-                        editingListId = store.lists.last?.id
+                        guard let added = store.lists.first(where: { !existing.contains($0.id) }) else { return }
+                        editingName = added.name
+                        editingListId = added.id
                     } label: {
                         Image(systemName: "plus")
-                            .font(.body.weight(.medium))
+                            .font(.system(size: 12.5, weight: .medium))
                             .foregroundStyle(accent)
-                    }.buttonStyle(.plain)
+                            .frame(width: 28, height: 28).contentShape(Rectangle())
+                    }.buttonStyle(.plain).help("添加目标集").accessibilityLabel("添加目标集")
                 }
 
                 VStack(spacing: 4) {
@@ -461,6 +410,7 @@ struct SettingsView: View {
                                     commitListRename(list)
                                 } label: {
                                     Text(L10n.done).font(.caption.weight(.semibold)).foregroundStyle(accent)
+                                        .frame(minWidth: 32, minHeight: 28).contentShape(Rectangle())
                                 }.buttonStyle(.plain)
                             } else {
                                 Text(list.name)
@@ -608,11 +558,12 @@ struct SettingsView: View {
         card {
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
-                    Text(L10n.labels).font(.body.weight(.medium))
+                    Text(L10n.labels).font(.system(size: 12.5, weight: .medium))
                     Spacer()
                     Button { addNewLabel() } label: {
-                        Image(systemName: "plus").font(.body.weight(.medium)).foregroundStyle(accent)
-                    }.buttonStyle(.plain)
+                        Image(systemName: "plus").font(.system(size: 12.5, weight: .medium)).foregroundStyle(accent)
+                            .frame(width: 28, height: 28).contentShape(Rectangle())
+                    }.buttonStyle(.plain).help("添加标签").accessibilityLabel("添加标签")
                 }
 
                 if store.labelsForActiveList.isEmpty {
@@ -660,7 +611,7 @@ struct SettingsView: View {
             if isEditing {
                 TextField(L10n.namePlaceholder, text: $labelName)
                     .textFieldStyle(.plain)
-                    .font(.subheadline)
+                    .font(.system(size: 12.5))
                     .focused($labelNameFocused)
                     .onSubmit { commitLabel(label) }
                     .onAppear {
@@ -671,7 +622,7 @@ struct SettingsView: View {
                         DispatchQueue.main.async { labelNameFocused = true }
                     }
             } else {
-                Text(label.name).font(.subheadline)
+                Text(label.name).font(.system(size: 12.5))
             }
             Spacer()
             HStack(spacing: 6) {
@@ -798,71 +749,50 @@ struct SettingsView: View {
     }
 
     private func addNewLabel() {
-        store.addLabel(name: L10n.newLabel, colorHex: ColorPalette.presets.randomElement()!.hex, icon: IconPalette.defaultIcon)
-        let newLabel = store.labelsForActiveList.last!
+        let existing = Set(store.labels.map(\.id))
+        store.addLabel(name: L10n.newLabel, colorHex: ColorPalette.presets.randomElement()?.hex ?? ColorPalette.defaultHex, icon: IconPalette.defaultIcon)
+        guard let newLabel = store.labelsForActiveList.first(where: { !existing.contains($0.id) }) else { return }
         labelName = newLabel.name
         editingLabelId = newLabel.id
     }
 
+    @State private var dataFeedback: String?
+    @State private var showDataFeedback = false
     @State private var showClearConfirm = false
 
     private var dataSection: some View {
         card {
             VStack(alignment: .leading, spacing: 10) {
-                Text(L10n.data).font(.body.weight(.medium))
+                Text(L10n.data).font(.system(size: 12.5, weight: .medium))
                 HStack(spacing: 8) {
                     actionButton(label: L10n.exportButton, icon: "arrow.up.doc", color: accent) {
                         let panel = NSSavePanel()
                         panel.allowedContentTypes = [.json]
-                        panel.nameFieldStringValue = "docket-export.json"
+                        panel.nameFieldStringValue = "polaris-goals.json"
                         if panel.runModal() == .OK, let url = panel.url {
                             let export = DocketExport(schemaVersion: Store.currentSchemaVersion, lists: store.lists, labels: store.labels, tasks: store.items)
-                            try? JSONEncoder().encode(export).write(to: url, options: .atomic)
+                            do {
+                                try JSONEncoder().encode(export).write(to: url, options: .atomic)
+                                reportData("已导出 \(export.tasks.count) 个目标。")
+                            } catch { reportData("导出失败：\(error.localizedDescription)") }
                         }
                     }
                     actionButton(label: L10n.importButton, icon: "arrow.down.doc", color: accent) {
                         let panel = NSOpenPanel()
                         panel.allowedContentTypes = [.json]
                         panel.allowsMultipleSelection = false
-                        if panel.runModal() == .OK, let url = panel.url,
-                           let data = try? Data(contentsOf: url) {
-                            if let export = try? JSONDecoder().decode(DocketExport.self, from: data) {
-                                // Add lists that don't already exist (matched by name).
-                                for list in export.lists where !store.lists.contains(where: { $0.name == list.name }) {
-                                    store.lists.append(list)
-                                }
-                                for label in export.labels where !store.labels.contains(where: { $0.id == label.id }) {
-                                    store.labels.append(label)
-                                }
-                                // Build maps to remap imported tasks onto surviving lists.
-                                let exportedListName = Dictionary(export.lists.map { ($0.id, $0.name) },
-                                                                   uniquingKeysWith: { first, _ in first })
-                                let listIdByName = Dictionary(store.lists.map { ($0.name, $0.id) },
-                                                              uniquingKeysWith: { first, _ in first })
-                                let validListIds = Set(store.lists.map(\.id))
-                                let defaultId = store.lists.first(where: { $0.isDefault })?.id ?? store.lists[0].id
-
-                                for item in export.tasks where !store.items.contains(where: { $0.id == item.id }) {
-                                    var item = item
-                                    if let lid = item.listId, !validListIds.contains(lid) {
-                                        // The referenced list was de-duplicated away — remap by
-                                        // name, falling back to the default list.
-                                        item.listId = exportedListName[lid].flatMap { listIdByName[$0] } ?? defaultId
-                                    } else if item.listId == nil {
-                                        item.listId = defaultId
-                                    }
-                                    store.items.append(item)
-                                }
-                                store.persistAll()
-                            } else if let tasks = try? JSONDecoder().decode([TodoItem].self, from: data) {
-                                for item in tasks where !store.items.contains(where: { $0.id == item.id }) {
-                                    store.add(item)
-                                }
-                            }
+                        if panel.runModal() == .OK, let url = panel.url {
+                            do {
+                                let plan = try GoalImportPlan(data: Data(contentsOf: url),
+                                    lists: store.lists, labels: store.labels, tasks: store.items,
+                                    activeListID: store.activeListId, supportedVersion: Store.currentSchemaVersion)
+                                guard store.importData(lists: plan.lists, labels: plan.labels, tasks: plan.tasks) else { return }
+                                reportData("已导入 \(plan.tasks.count) 个目标，跳过 \(plan.skipped) 个已有目标。")
+                            } catch { reportData("未导入任何数据：\(error.localizedDescription)") }
                         }
                     }
                 }
-                Divider()
+                palette.line.frame(height: 0.5)
                 actionButton(
                     label: L10n.clearCompleted,
                     icon: "trash",
@@ -873,6 +803,11 @@ struct SettingsView: View {
                 .opacity(store.completedTasks.isEmpty ? 0.5 : 1)
             }
         }
+    }
+
+    private func reportData(_ message: String) {
+        dataFeedback = message
+        showDataFeedback = true
     }
 
     private func actionButton(label: String, icon: String, color: Color, badge: String? = nil, action: @escaping () -> Void) -> some View {
@@ -902,10 +837,10 @@ struct SettingsView: View {
     @AppStorage("matrixScheduleColor") private var scheduleColor = "#3B82F6"
     @AppStorage("matrixDelegateColor") private var delegateColor = "#F59E0B"
     @AppStorage("matrixEliminateColor") private var eliminateColor = "#64748B"
-    @AppStorage("matrixDoFirstLabel") private var doFirstLabel = "Do First"
-    @AppStorage("matrixScheduleLabel") private var scheduleLabel = "Schedule"
-    @AppStorage("matrixDelegateLabel") private var delegateLabel = "Delegate"
-    @AppStorage("matrixEliminateLabel") private var eliminateLabel = "Eliminate"
+    @AppStorage("matrixDoFirstLabel") private var doFirstLabel = "优先推进"
+    @AppStorage("matrixScheduleLabel") private var scheduleLabel = "持续投入"
+    @AppStorage("matrixDelegateLabel") private var delegateLabel = "委派协作"
+    @AppStorage("matrixEliminateLabel") private var eliminateLabel = "暂时放下"
     @AppStorage("matrixLabelLength") private var matrixLabelLength = 14
     @AppStorage("matrixShowAxes") private var matrixShowAxes = true
     @AppStorage("matrixShowBadges") private var matrixShowBadges = true
@@ -913,51 +848,41 @@ struct SettingsView: View {
     private var matrixSection: some View {
         card {
             VStack(alignment: .leading, spacing: 12) {
-                Text(L10n.eisenhowerMatrix).font(.body.weight(.medium))
+                Text(L10n.eisenhowerMatrix).font(.system(size: 12.5, weight: .medium))
 
                 // Quadrant colors + labels
                 VStack(spacing: 8) {
-                    matrixQuadrantRow(label: $doFirstLabel, color: $doFirstColor, defaultLabel: "Do First")
-                    matrixQuadrantRow(label: $scheduleLabel, color: $scheduleColor, defaultLabel: "Schedule")
-                    matrixQuadrantRow(label: $delegateLabel, color: $delegateColor, defaultLabel: "Delegate")
-                    matrixQuadrantRow(label: $eliminateLabel, color: $eliminateColor, defaultLabel: "Eliminate")
+                    matrixQuadrantRow(label: $doFirstLabel, color: $doFirstColor, defaultLabel: "优先推进")
+                    matrixQuadrantRow(label: $scheduleLabel, color: $scheduleColor, defaultLabel: "持续投入")
+                    matrixQuadrantRow(label: $delegateLabel, color: $delegateColor, defaultLabel: "委派协作")
+                    matrixQuadrantRow(label: $eliminateLabel, color: $eliminateColor, defaultLabel: "暂时放下")
                 }
 
-                Divider()
+                palette.line.frame(height: 0.5)
 
                 // Label length
                 HStack {
-                    Text(L10n.labelLength).font(.subheadline)
+                    Text(L10n.labelLength).font(.system(size: 12.5))
                     Spacer()
                     Text(L10n.charsCount(matrixLabelLength)).font(.system(size: 11, weight: .medium)).foregroundStyle(accent)
                 }
                 Slider(value: Binding(get: { Double(matrixLabelLength) }, set: { matrixLabelLength = Int($0) }), in: 6...20, step: 1)
                     .tint(accent)
 
-                Divider()
+                palette.line.frame(height: 0.5)
 
                 // Toggles
                 ThemedToggle(label: L10n.showAxisLabels, isOn: $matrixShowAxes)
                 ThemedToggle(label: L10n.showCountBadges, isOn: $matrixShowBadges)
 
-                Divider()
+                palette.line.frame(height: 0.5)
 
                 HStack {
-                    Text(L10n.labelLines).font(.subheadline)
+                    Text(L10n.labelLines).font(.system(size: 12.5))
                     Spacer()
-                    Menu {
-                        ForEach(1...5, id: \.self) { n in
-                            Button("\(n)") { matrixLineCount = n }
-                        }
-                    } label: {
-                        Text("\(matrixLineCount)")
-                            .font(.system(size: 12, weight: .semibold))
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 5)
-                            .background(RoundedRectangle(cornerRadius: 6).fill(accent.opacity(0.12)))
-                            .foregroundStyle(accent)
-                    }
-                    .buttonStyle(.plain)
+                    Picker(L10n.labelLines, selection: $matrixLineCount) {
+                        ForEach(1...5, id: \.self) { Text("\($0)").tag($0) }
+                    }.labelsHidden().pickerStyle(.menu).controlSize(.small)
                 }
             }
         }
@@ -968,13 +893,14 @@ struct SettingsView: View {
             ColorSwatchButton(hex: color, popoverTitle: defaultLabel)
             TextField(defaultLabel, text: label)
                 .textFieldStyle(.plain)
-                .font(.subheadline)
+                .font(.system(size: 12.5))
         }
         .padding(.vertical, 4)
     }
 
     // MARK: - Visibility
 
+    @AppStorage("showGoalInMenuBar") private var showGoalInMenuBar = true
     @AppStorage("showMatrixButton") private var showMatrixButton = true
     @AppStorage("showCompletedButton") private var showCompletedButton = true
     @AppStorage("matrixLineCount") private var matrixLineCount = 1
@@ -982,14 +908,12 @@ struct SettingsView: View {
     private var displaySection: some View {
         card {
             VStack(alignment: .leading, spacing: 10) {
-                Text(L10n.display).font(.body.weight(.medium))
-                ThemedToggle(label: L10n.liquidGlass, isOn: $useGlass)
-                Divider()
+                Text(L10n.display).font(.system(size: 12.5, weight: .medium))
                 ThemedToggle(label: L10n.completionConfetti, isOn: $showConfetti)
-                Divider()
-                Text(L10n.showInToolbar).font(.caption).foregroundStyle(.secondary)
-                ThemedToggle(label: L10n.matrixButton, isOn: $showMatrixButton)
-                ThemedToggle(label: L10n.completedButton, isOn: $showCompletedButton)
+                palette.line.frame(height: 0.5)
+                ThemedToggle(label: "菜单栏显示主目标", isOn: $showGoalInMenuBar)
+                Text("右键目标选择「显示在菜单栏」。长标题自动缩短，悬停可看全文。")
+                    .font(.caption).foregroundStyle(.secondary)
             }
         }
     }
@@ -997,7 +921,7 @@ struct SettingsView: View {
     private var themeSection: some View {
         card {
             VStack(alignment: .leading, spacing: 10) {
-                Text(L10n.theme).font(.body.weight(.medium))
+                Text(L10n.theme).font(.system(size: 12.5, weight: .medium))
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 5), spacing: 10) {
                     ForEach(AppTheme.allCases) { t in
                         Button {
@@ -1059,35 +983,22 @@ struct SettingsView: View {
 
     // MARK: - Helpers
 
-    private func setHotkey(_ code: Int, _ mods: Int) {
-        hotkeyKeyCode = code
-        hotkeyModifiers = mods
-        AppDelegate.shared?.registerHotkey()
-    }
-
-    /// Small all-caps header that visually groups the cards beneath it.
+    /// Section headings share the compact editor typography.
     @ViewBuilder
     private func groupHeader(_ text: String, first: Bool = false) -> some View {
         HStack {
             Text(text)
-                .font(.system(size: 11, weight: .semibold))
-                .tracking(1.2)
-                .foregroundStyle(.tertiary)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(palette.secondary)
             Spacer()
         }
-        .padding(.horizontal, 4)
         .padding(.top, first ? 0 : 12)
     }
 
     @ViewBuilder
     private func card<Content: View>(@ViewBuilder content: () -> Content) -> some View {
         content()
-            .padding(12)
+            .padding(.vertical, 4)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(useGlass ? AnyShapeStyle(.regularMaterial) : AnyShapeStyle(ThemeManager.resolvedCardBackground(themeRaw: themeRaw)))
-            )
-            .overlay(useGlass ? nil : RoundedRectangle(cornerRadius: 10).stroke(.quaternary, lineWidth: 0.5))
     }
 }

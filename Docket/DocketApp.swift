@@ -4,14 +4,18 @@
 
 import SwiftUI
 import AppKit
+import ServiceManagement
 import Carbon.HIToolbox // For kVK_* virtual key codes only
 
 @main
-struct DocketApp: App {
-    @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
-
-    var body: some Scene {
-        Settings { EmptyView() }
+enum PolarisApp {
+    @MainActor static func main() {
+        let application = NSApplication.shared
+        let delegate = AppDelegate()
+        application.delegate = delegate
+        // The app's only window is its existing menu-bar panel. A placeholder
+        // SwiftUI Settings scene would register a second, empty native window.
+        withExtendedLifetime(delegate) { application.run() }
     }
 }
 
@@ -23,24 +27,47 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private var statusItem: NSStatusItem!
     private var popover: NSPopover!
     private var eventMonitor: Any?
-    private var hotkeyGlobalMonitor: Any?
-    private var hotkeyLocalMonitor: Any?
+    private var hotkeyRef: EventHotKeyRef?
+    private var hotkeyHandler: EventHandlerRef?
+    private(set) var isRecordingShortcut = false
     private var badgeTimer: Timer?
-    private var lastHotkeyTime: Date = .distantPast
+    private var menuActivity: PolarisMenuActivity?
+    private var goalObserver: NSObjectProtocol?
+    private var preferencesObserver: NSObjectProtocol?
+    private var verificationTrace: [[String: Any]] = []
+    private var verificationNavigation: [String: Any] = [:]
+    private var pendingPopoverSize: NSSize?
+    private var popoverResizeScheduled = false
 
     var onQuickAdd: (() -> Void)?
+    private var settingsRequested = false
+    var onSettings: (() -> Void)? { didSet { deliverSettingsRequest() } }
     var onTipJar: (() -> Void)?
     var onPopoverClose: (() -> Void)?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         AppDelegate.shared = self
         NSApp.setActivationPolicy(.accessory)
+        setupApplicationMenu()
+        // App-scoped appearance for visual acceptance, without changing macOS settings.
+        if DocketRuntime.isPreview {
+            let args = ProcessInfo.processInfo.arguments
+            if let i = args.firstIndex(of: "--preview-appearance"), args.indices.contains(i + 1) {
+                NSApp.appearance = NSAppearance(named: args[i + 1] == "light" ? .aqua : .darkAqua)
+            }
+        }
         NotificationManager.shared.requestPermission()
 
         setupPopover()
         setupStatusItem()
-        setupBadgeTimer()
-        registerHotkey()
+        if !DocketRuntime.isPreview { registerHotkey() }
+        if !DocketRuntime.isPreview, UserDefaults.standard.bool(forKey: "launchAtLogin"),
+           SMAppService.mainApp.status == .notRegistered {
+            do { try SMAppService.mainApp.register() }
+            catch { NSLog("Polaris: could not restore launch at login: %@", error.localizedDescription) }
+        }
+        goalObserver = NotificationCenter.default.addObserver(forName: .goalBoardChanged, object: nil, queue: .main) { [weak self] _ in self?.updateBadge() }
+        preferencesObserver = NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification, object: nil, queue: .main) { [weak self] _ in self?.updateBadge() }
 
         // If the user previously enabled Reminders sync, start observing and
         // PULL current remote state so any changes made in Reminders (or via
@@ -54,7 +81,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         // user just edited on another device. Pull-only converges safely —
         // subsequent user edits will push through the normal per-mutation
         // syncPush path.
-        if UserDefaults.standard.bool(forKey: "remindersSyncEnabled"),
+        if !DocketRuntime.isPreview, UserDefaults.standard.bool(forKey: "remindersSyncEnabled"),
            RemindersSync.shared.isAuthorized {
             RemindersSync.shared.startObserving()
             let syncedLists = Store.shared.lists.filter { $0.remindersCalendarId != nil }
@@ -64,12 +91,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         }
     }
 
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !popover.isShown { togglePopover() }
+        return true
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         // Explicitly tear down anything that outlives the app object under
         // normal ARC rules — timers hold strong references, and event
         // monitors are owned by AppKit until removed.
+        if let goalObserver { NotificationCenter.default.removeObserver(goalObserver) }
+        if let preferencesObserver { NotificationCenter.default.removeObserver(preferencesObserver) }
         badgeTimer?.invalidate()
         badgeTimer = nil
+        menuActivity?.stop()
+        menuActivity = nil
         stopEventMonitor()
         unregisterHotkey()
         RemindersSync.shared.stopObserving()
@@ -77,13 +113,67 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
     // MARK: - Setup
 
+    private func setupApplicationMenu() {
+        let mainMenu = NSMenu()
+        let applicationItem = NSMenuItem(title: "Polaris", action: nil, keyEquivalent: "")
+        let applicationMenu = NSMenu(title: "Polaris")
+        @discardableResult func appItem(_ title: String, _ action: Selector, _ key: String = "", target: AnyObject? = nil) -> NSMenuItem {
+            let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
+            item.target = target
+            applicationMenu.addItem(item)
+            return item
+        }
+        appItem("关于 Polaris", #selector(NSApplication.orderFrontStandardAboutPanel(_:)), target: NSApp)
+        applicationMenu.addItem(.separator())
+        appItem("设置…", #selector(showSettings), ",", target: self)
+        applicationMenu.addItem(.separator())
+        let services = NSMenu(title: "服务")
+        let servicesItem = NSMenuItem(title: "服务", action: nil, keyEquivalent: "")
+        servicesItem.submenu = services
+        applicationMenu.addItem(servicesItem)
+        NSApp.servicesMenu = services
+        applicationMenu.addItem(.separator())
+        appItem("隐藏 Polaris", #selector(NSApplication.hide(_:)), "h", target: NSApp)
+        appItem("隐藏其他", #selector(NSApplication.hideOtherApplications(_:)), "h", target: NSApp).keyEquivalentModifierMask = [.command, .option]
+        appItem("显示全部", #selector(NSApplication.unhideAllApplications(_:)), target: NSApp)
+        applicationMenu.addItem(.separator())
+        appItem("退出 Polaris", #selector(menuQuit), "q", target: self)
+        applicationItem.submenu = applicationMenu
+        mainMenu.addItem(applicationItem)
+
+        let editItem = NSMenuItem(title: "编辑", action: nil, keyEquivalent: "")
+        let editMenu = NSMenu(title: "编辑")
+        for (title, action, key, modifiers) in [
+            ("撤销", "undo:", "z", NSEvent.ModifierFlags.command),
+            ("重做", "redo:", "z", [.command, .shift]),
+            ("剪切", "cut:", "x", .command),
+            ("复制", "copy:", "c", .command),
+            ("粘贴", "paste:", "v", .command),
+            ("粘贴并匹配样式", "pasteAsPlainText:", "v", [.command, .option, .shift]),
+            ("删除", "delete:", "", .command),
+            ("全选", "selectAll:", "a", .command)
+        ] {
+            if title == "剪切" || title == "全选" { editMenu.addItem(.separator()) }
+            let item = NSMenuItem(title: title, action: Selector(action), keyEquivalent: key)
+            item.keyEquivalentModifierMask = modifiers
+            editMenu.addItem(item) // Nil target preserves the text responder chain.
+        }
+        editItem.submenu = editMenu
+        mainMenu.addItem(editItem)
+        NSApp.mainMenu = mainMenu
+    }
+
     private func setupPopover() {
         popover = NSPopover()
-        popover.contentSize = NSSize(width: 340, height: 480)
         popover.behavior = .applicationDefined
         popover.delegate = self
         popover.setValue(true, forKeyPath: "shouldHideAnchor")
-        popover.contentViewController = NSHostingController(rootView: ContentView())
+        let hosting = NSHostingController(rootView: ContentView())
+        // The panel has one size owner. Hosting constraints must not resize its
+        // native window from inside the SwiftUI layout that requests that size.
+        hosting.sizingOptions = []
+        popover.contentViewController = hosting
+        popover.contentSize = Self.preferredPopoverSize
     }
 
     private func setupStatusItem() {
@@ -93,18 +183,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                 ?? NSImage(contentsOfFile: Bundle.main.path(forResource: "menubar-icon", ofType: "png") ?? "")
             img?.size = NSSize(width: 18, height: 18)
             img?.isTemplate = true
-            button.image = img ?? NSImage(systemSymbolName: "checkmark.circle.fill", accessibilityDescription: "Docket")
+            button.image = img ?? NSImage(systemSymbolName: "checkmark.circle.fill", accessibilityDescription: "Polaris")
             button.action = #selector(handleClick)
             button.target = self
             button.sendAction(on: [.leftMouseUp, .rightMouseUp])
+            menuActivity = PolarisMenuActivity(button: button)
         }
         updateBadge()
     }
 
     private func setupBadgeTimer() {
+        badgeTimer?.invalidate()
         badgeTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
             self?.updateBadge()
+            NotificationCenter.default.post(name: .polarisClockTick, object: nil)
         }
+        badgeTimer?.tolerance = 10
     }
 
     // MARK: - Click Handling
@@ -121,6 +215,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private func showContextMenu() {
         let menu = NSMenu()
         menu.addItem(NSMenuItem(title: L10n.newTask, action: #selector(menuNewTask), keyEquivalent: "n"))
+        let settingsItem = NSMenuItem(title: "设置…", action: #selector(showSettings), keyEquivalent: ",")
+        settingsItem.target = self
+        menu.addItem(settingsItem)
         menu.addItem(NSMenuItem.separator())
 
         let overdueCount = Store.shared.items.filter { !$0.isCompleted && $0.isOverdue }.count
@@ -147,6 +244,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in self?.onQuickAdd?() }
     }
 
+    @objc func showSettings() {
+        guard let popover else { return }
+        settingsRequested = true
+        if !popover.isShown { togglePopover() }
+        NSApp.activate(ignoringOtherApps: true)
+        popover.contentViewController?.view.window?.makeKey()
+        deliverSettingsRequest()
+    }
+
+    private func deliverSettingsRequest() {
+        guard settingsRequested, let onSettings else { return }
+        settingsRequested = false
+        DispatchQueue.main.async(execute: onSettings)
+    }
+
     @objc private func menuTipJar() {
         if !popover.isShown { togglePopover() }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in self?.onTipJar?() }
@@ -163,35 +275,110 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     // MARK: - Badge
 
     func updateBadge() {
-        let count = Store.shared.badgeCount
-        guard let button = statusItem.button else { return }
+        guard let button = statusItem?.button else { return }
+        let enabled = UserDefaults.standard.object(forKey: "showGoalInMenuBar") as? Bool ?? true
+        let goal = enabled ? Store.shared.menuBarGoal : nil
+        menuActivity?.refresh()
+        button.image?.isTemplate = true
+        button.imagePosition = .imageLeading
+        button.font = NSFont.menuBarFont(ofSize: 13)
+        button.title = goal.map { " " + GoalBoardRules.menuTitle($0.title) } ?? ""
+        button.toolTip = goal.map { goal in goal.title + (goal.dueDate.map { "\n" + DueDateFormatter.format($0, hasTime: goal.hasDueTime) } ?? "") } ?? "Polaris · 目标"
+        button.setAccessibilityLabel(goal.map { "主目标：" + $0.title } ?? "Polaris 目标")
+        DispatchQueue.main.async { [weak self] in self?.writeRuntimeState() }
+    }
 
-        button.subviews.forEach { $0.removeFromSuperview() }
-        button.title = ""
+    func recordVerificationEvent(_ event: String, fields: [String: Any] = [:], navigation: [String: Any]? = nil) {
+        guard DocketRuntime.verificationDirectory != nil || DocketRuntime.isPreview else { return }
+        if let navigation { verificationNavigation = navigation }
+        verificationTrace.append(["event": event, "uptime": ProcessInfo.processInfo.systemUptime, "fields": fields, "responder": verificationResponderState()])
+        if verificationTrace.count > 100 { verificationTrace.removeFirst(verificationTrace.count - 100) }
+    }
 
-        if count > 0 {
-            let height: CGFloat = 14
-            let text = "\(count)"
-            let width: CGFloat = text.count > 1 ? height + 4 : height // pill for 2+ digits, circle for 1
+    private func verificationResponderState() -> [String: Any] {
+        guard let window = NSApp.keyWindow else { return [:] }
+        var result: [String: Any] = ["windowNumber": window.windowNumber]
+        if let responder = window.firstResponder {
+            result["class"] = String(describing: type(of: responder))
+            result["identity"] = String(describing: ObjectIdentifier(responder))
+            if let textView = responder as? NSTextView {
+                result["isFieldEditor"] = textView.isFieldEditor
+                if let delegate = textView.delegate {
+                    result["delegateClass"] = String(describing: type(of: delegate))
+                    result["delegateIdentity"] = String(describing: ObjectIdentifier(delegate))
+                }
+            }
+        }
+        return result
+    }
 
-            let x = button.bounds.width - width - 1
-            let y = button.bounds.height - height + 1
+    /// Read back actual native UI state only in preview or explicitly requested local verification.
+    func writeRuntimeState() {
+        guard let dir = DocketRuntime.verificationDirectory ?? DocketRuntime.previewDirectory,
+              let button = statusItem?.button else { return }
+        let controller = popover?.contentViewController
+        // Diagnostics must not create a hosting view earlier than normal UI use.
+        let hostingView = controller?.isViewLoaded == true ? controller?.view : nil
+        let panelWindow = hostingView?.window
+        let state: [String: Any] = [
+            "pid": ProcessInfo.processInfo.processIdentifier,
+            "panelShown": isPopoverShown,
+            "refreshTimerRunning": badgeTimer?.isValid == true,
+            "activityTimerRunning": menuActivity?.isAnimating == true,
+            "isSyncing": RemindersSync.shared.isSyncing,
+            "globalHotkeyStatus": UserDefaults.standard.integer(forKey: "globalHotkeyStatus"),
+            "isRecordingShortcut": isRecordingShortcut,
+            "navigation": verificationNavigation,
+            "trace": verificationTrace,
+            "responder": verificationResponderState(),
+            "panelWindowFrame": panelWindow.map { ["x": $0.frame.minX, "y": $0.frame.minY, "width": $0.frame.width, "height": $0.frame.height] } ?? [:],
+            "hostingViewFrame": hostingView.map { ["width": $0.frame.width, "height": $0.frame.height] } ?? [:],
+            "windows": NSApp.windows.filter { $0.isVisible }.map { window -> [String: Any] in
+                ["x": window.frame.minX, "y": window.frame.minY, "width": window.frame.width, "height": window.frame.height, "number": window.windowNumber, "key": window.isKeyWindow, "class": String(describing: type(of: window))]
+            },
+            "screenVisibleFrame": NSScreen.main.map { ["x": $0.visibleFrame.minX, "y": $0.visibleFrame.minY, "width": $0.visibleFrame.width, "height": $0.visibleFrame.height] } ?? [:],
+            "bundleID": Bundle.main.bundleIdentifier ?? "",
+            "menuTitle": button.title,
+            "menuTooltip": button.toolTip ?? "",
+            "menuWidth": button.bounds.width,
+            "menuVisible": statusItem.isVisible,
+            "panelWidth": popover.contentSize.width,
+            "panelHeight": popover.contentSize.height,
+            "activeGoalCount": Store.shared.items.filter { !$0.isCompleted }.count
+        ]
+        if let data = try? JSONSerialization.data(withJSONObject: state, options: [.prettyPrinted, .sortedKeys]) {
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            try? data.write(to: dir.appendingPathComponent("runtime-state.json"), options: .atomic)
+        }
+    }
 
-            let bg = NSView(frame: NSRect(x: x, y: y, width: width, height: height))
-            bg.wantsLayer = true
-            bg.layer?.backgroundColor = NSColor.systemRed.cgColor
-            bg.layer?.cornerRadius = height / 2
+    static var maximumPopoverHeight: CGFloat {
+        preferredPopoverSize.height
+    }
 
-            let label = NSTextField(labelWithString: text)
-            label.font = NSFont.systemFont(ofSize: 9, weight: .bold)
-            label.textColor = .white
-            label.alignment = .center
-            label.isBezeled = false
-            label.drawsBackground = false
-            label.frame = NSRect(x: x, y: y, width: width, height: height)
+    static var preferredPopoverSize: NSSize {
+        let screen = shared?.statusItem?.button?.window?.screen ?? NSScreen.main
+        return GoalBoardRules.panelSize(availableHeight: screen?.visibleFrame.height ?? 800)
+    }
 
-            button.addSubview(bg)
-            button.addSubview(label)
+    func resizePopover(width: CGFloat, height: CGFloat) {
+        recordVerificationEvent("popover.resize.request", fields: ["width": width, "height": height])
+        pendingPopoverSize = NSSize(width: width, height: height)
+        guard !popoverResizeScheduled else { return }
+        popoverResizeScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            // Take the latest complete request before applying. If AppKit causes
+            // a new measurement, that request schedules its own following turn.
+            self.popoverResizeScheduled = false
+            guard let requested = self.pendingPopoverSize else { return }
+            self.pendingPopoverSize = nil
+            let size = NSSize(width: requested.width, height: min(Self.maximumPopoverHeight, requested.height))
+            let changed = self.popover.contentSize != size
+            if changed { self.popover.contentSize = size }
+            self.recordVerificationEvent(changed ? "popover.resize.applied" : "popover.resize.unchanged",
+                fields: ["width": size.width, "height": size.height, "requestedHeight": requested.height])
+            DispatchQueue.main.async { [weak self] in self?.writeRuntimeState() }
         }
     }
 
@@ -199,80 +386,88 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
     func registerHotkey() {
         unregisterHotkey()
-
-        let enabled = UserDefaults.standard.object(forKey: "hotkeyEnabled") as? Bool ?? true
-        guard enabled else { return }
-
-        let keyCode = UserDefaults.standard.integer(forKey: "hotkeyKeyCode")
-        let modifiers = UserDefaults.standard.integer(forKey: "hotkeyModifiers")
-        let code = keyCode > 0 ? UInt16(keyCode) : UInt16(kVK_ANSI_D)
-        let targetMods = HotkeyMapping.cocoaModifiers(fromCarbon: UInt32(modifiers > 0 ? modifiers : Int(cmdKey | shiftKey)))
-
-        func matches(_ event: NSEvent) -> Bool {
-            event.keyCode == code &&
-            event.modifierFlags.intersection(.deviceIndependentFlagsMask) == targetMods
-        }
-
-        // Global monitor: fires only when another app is frontmost (Docket
-        // inactive) — this is the common "summon Docket" path.
-        hotkeyGlobalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            guard matches(event) else { return }
-            DispatchQueue.main.async { self?.handleHotkey() }
-        }
-
-        // Local monitor: fires only when Docket itself is frontmost (e.g. the
-        // popover is open). Without this, the documented double-press quick-add
-        // would never trigger, because the global monitor is silent while the
-        // app is active. Returning nil consumes the event so it doesn't also
-        // reach a focused text field.
-        hotkeyLocalMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            guard matches(event) else { return event }
-            self?.handleHotkey()
-            return nil
-        }
+        guard !DocketRuntime.isPreview, !isRecordingShortcut else { return }
+        let defaults = UserDefaults.standard
+        guard defaults.object(forKey: "hotkeyEnabled") as? Bool ?? true else { defaults.set(0, forKey: "globalHotkeyStatus"); return }
+        let code = defaults.object(forKey: "hotkeyKeyCode") as? Int ?? kVK_Space
+        let modifiers = defaults.object(forKey: "hotkeyModifiers") as? Int ?? Int(optionKey)
+        guard (0...127).contains(code), modifiers >= 0, modifiers <= Int(UInt32.max) else { defaults.set(Int(paramErr), forKey: "globalHotkeyStatus"); return }
+        defaults.set(Int(installHotkey(code: UInt32(code), modifiers: UInt32(modifiers))), forKey: "globalHotkeyStatus")
     }
 
+    func beginHotkeyRecording() { isRecordingShortcut = true; unregisterHotkey() }
+
+    func endHotkeyRecording(restorePrevious: Bool = true) {
+        guard isRecordingShortcut else { return }
+        isRecordingShortcut = false
+        if restorePrevious { registerHotkey() }
+    }
+
+    /// Only commit preferences after Carbon accepts the new combination.
+    func applyRecordedHotkey(code: Int, modifiers: Int, label: String) -> OSStatus {
+        guard HotkeyMapping.validationError(keyCode: code, modifiers: modifiers) == nil else { return OSStatus(paramErr) }
+        unregisterHotkey()
+        let result = DocketRuntime.isPreview ? noErr : installHotkey(code: UInt32(code), modifiers: UInt32(modifiers))
+        guard result == noErr else { return result }
+        let defaults = UserDefaults.standard
+        defaults.set(code, forKey: "hotkeyKeyCode")
+        defaults.set(modifiers, forKey: "hotkeyModifiers")
+        defaults.set(label, forKey: "hotkeyKeyLabel")
+        defaults.set(true, forKey: "hotkeyEnabled")
+        defaults.set(0, forKey: "globalHotkeyStatus")
+        return result
+    }
+
+    private func installHotkey(code: UInt32, modifiers: UInt32) -> OSStatus {
+        var eventType = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
+        let handlerStatus = InstallEventHandler(GetApplicationEventTarget(), { _, _, context in
+            guard let context else { return OSStatus(eventNotHandledErr) }
+            let app = Unmanaged<AppDelegate>.fromOpaque(context).takeUnretainedValue()
+            app.togglePopover()
+            return noErr
+        }, 1, &eventType, Unmanaged.passUnretained(self).toOpaque(), &hotkeyHandler)
+        guard handlerStatus == noErr else { return handlerStatus }
+        let result = RegisterEventHotKey(code, modifiers, EventHotKeyID(signature: 0x504F4C52, id: 1), GetApplicationEventTarget(), OptionBits(kEventHotKeyExclusive), &hotkeyRef)
+        if result != noErr, let hotkeyHandler { RemoveEventHandler(hotkeyHandler); self.hotkeyHandler = nil }
+        return result
+    }
     private func unregisterHotkey() {
-        if let monitor = hotkeyGlobalMonitor {
-            NSEvent.removeMonitor(monitor)
-            hotkeyGlobalMonitor = nil
-        }
-        if let monitor = hotkeyLocalMonitor {
-            NSEvent.removeMonitor(monitor)
-            hotkeyLocalMonitor = nil
-        }
+        if let hotkeyRef { UnregisterEventHotKey(hotkeyRef); self.hotkeyRef = nil }
+        if let hotkeyHandler { RemoveEventHandler(hotkeyHandler); self.hotkeyHandler = nil }
     }
+    var isMainPanelKey: Bool { popover?.contentViewController?.view.window?.isKeyWindow == true }
+    var isPopoverShown: Bool { popover?.isShown == true }
 
-    private func handleHotkey() {
-        let now = Date()
-        let elapsed = now.timeIntervalSince(lastHotkeyTime)
-        lastHotkeyTime = now
-
-        if popover.isShown && elapsed < 0.8 {
-            onQuickAdd?()
-        } else {
-            togglePopover()
-            if elapsed < 0.8 {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in self?.onQuickAdd?() }
-            }
-        }
+    /// SwiftUI focus proxies must resign before their navigation page is removed.
+    /// Otherwise a later modifier-key event can address a deallocated focus view.
+    @discardableResult func endPanelEditing() -> Bool {
+        guard let window = popover?.contentViewController?.view.window else { return true }
+        guard (window.firstResponder as? NSTextView)?.hasMarkedText() != true else { return false }
+        let released = window.makeFirstResponder(nil)
+        recordVerificationEvent("panel.focus.released", fields: ["released": released])
+        return released
     }
 
     // MARK: - Popover
 
     @objc func togglePopover() {
+        recordVerificationEvent("popover.toggle", fields: ["wasShown": isPopoverShown])
         guard let button = statusItem.button else { return }
         if popover.isShown {
             closePopover()
         } else {
             NSApp.activate(ignoringOtherApps: true)
+            popover.contentSize = Self.preferredPopoverSize
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
             popover.contentViewController?.view.window?.makeKey()
             startEventMonitor()
+            setupBadgeTimer()
+            NotificationCenter.default.post(name: .popoverDidOpen, object: nil)
+            DispatchQueue.main.async { self.writeRuntimeState() }
         }
     }
 
-    private func closePopover() {
+    func closePopover() {
         popover.performClose(nil)
         stopEventMonitor()
     }
@@ -300,6 +495,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     }
 
     func popoverDidClose(_ notification: Notification) {
+        recordVerificationEvent("popover.didClose")
+        badgeTimer?.invalidate()
+        badgeTimer = nil
         stopEventMonitor()
         updateBadge()
         onPopoverClose?()
@@ -308,6 +506,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 }
 
 extension Notification.Name {
+    static let popoverDidOpen = Notification.Name("PolarisPopoverDidOpen")
+    static let polarisCommand = Notification.Name("PolarisCommand")
+    static let polarisSelectGoal = Notification.Name("PolarisSelectGoal")
+    static let polarisComplete = Notification.Name("PolarisComplete")
+    static let polarisSave = Notification.Name("PolarisSave")
+    static let polarisEscape = Notification.Name("PolarisEscape")
+    static let polarisCalendarEscape = Notification.Name("PolarisCalendarEscape")
+    static let polarisCancelShortcutRecording = Notification.Name("PolarisCancelShortcutRecording")
+    static let polarisClockTick = Notification.Name("PolarisClockTick")
     static let popoverDidClose = Notification.Name("DocketPopoverDidClose")
     static let scrollToTipJar = Notification.Name("DocketScrollToTipJar")
 }

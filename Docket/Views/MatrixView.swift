@@ -22,17 +22,16 @@ import SwiftUI
 struct MatrixView: View {
     @Binding var path: [NavDestination]
     var store = Store.shared
+    @Environment(\.polarisPalette) private var palette
 
-    @AppStorage("appTheme") private var themeRaw: Int = AppTheme.white.rawValue
-    @AppStorage("customHue") private var customHue: Double = 0.55
     @AppStorage("matrixDoFirstColor") private var doFirstColor = "#EF4444"
     @AppStorage("matrixScheduleColor") private var scheduleColor = "#3B82F6"
     @AppStorage("matrixDelegateColor") private var delegateColor = "#F59E0B"
     @AppStorage("matrixEliminateColor") private var eliminateColor = "#9CA3AF"
-    @AppStorage("matrixDoFirstLabel") private var doFirstLabel = "Do First"
-    @AppStorage("matrixScheduleLabel") private var scheduleLabel = "Schedule"
-    @AppStorage("matrixDelegateLabel") private var delegateLabel = "Delegate"
-    @AppStorage("matrixEliminateLabel") private var eliminateLabel = "Eliminate"
+    @AppStorage("matrixDoFirstLabel") private var doFirstLabel = "优先推进"
+    @AppStorage("matrixScheduleLabel") private var scheduleLabel = "持续投入"
+    @AppStorage("matrixDelegateLabel") private var delegateLabel = "委派协作"
+    @AppStorage("matrixEliminateLabel") private var eliminateLabel = "暂时放下"
     @AppStorage("matrixLabelLength") private var matrixLabelLength = 14
     @AppStorage("matrixLineCount") private var matrixLineCount = 1
     @AppStorage("matrixShowAxes") private var matrixShowAxes = true
@@ -43,7 +42,7 @@ struct MatrixView: View {
     /// actually something to drop.
     @State private var isAnyPillDragging = false
 
-    private var accent: Color { ThemeManager.resolvedAccent(themeRaw: themeRaw, customHue: customHue) }
+    private var accent: Color { palette.accentInk }
 
     private func quadrantColor(_ q: Quadrant) -> Color {
         switch q {
@@ -69,18 +68,17 @@ struct MatrixView: View {
             HStack {
                 Button { path.removeLast() } label: {
                     Image(systemName: "chevron.left")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 28, height: 28)
-                        .background(Circle().fill(.quaternary.opacity(0.5)))
-                }.buttonStyle(.plain)
+                        .font(.system(size: 13))
+                        .foregroundStyle(palette.secondary)
+                        .frame(width: 32, height: 32)
+                }.buttonStyle(GoalControlStyle()).accessibilityLabel("返回")
                 Spacer()
-                Text(L10n.eisenhowerMatrix).font(.headline)
+                Text(L10n.eisenhowerMatrix).font(.system(size: 13, weight: .semibold)).foregroundStyle(palette.ink)
                 Spacer()
-                Color.clear.frame(width: 28, height: 28)
+                Color.clear.frame(width: 32, height: 32)
             }
             .padding(.horizontal, 16)
-            .padding(.vertical, 12)
+            .frame(height: 48)
 
             Divider()
 
@@ -131,16 +129,15 @@ struct MatrixView: View {
     private var yAxisLabels: some View {
         VStack(spacing: 4) {
             verticalAxisLabel(L10n.axisImportant).frame(height: 140)
-            verticalAxisLabel(L10n.axisNot).frame(height: 140)
+            verticalAxisLabel("不重要").frame(height: 140)
         }
         .frame(width: 16)
     }
 
     private func axisLabel(_ text: String) -> some View {
         Text(text)
-            .font(.system(size: 8.5, weight: .semibold))
-            .tracking(1.4)
-            .foregroundStyle(.tertiary)
+            .font(.system(size: 10.5, weight: .medium))
+            .foregroundStyle(palette.secondary)
             .frame(maxWidth: .infinity)
     }
 
@@ -148,11 +145,12 @@ struct MatrixView: View {
         VStack(spacing: 1) {
             ForEach(Array(text.enumerated()), id: \.offset) { _, c in
                 Text(String(c))
-                    .font(.system(size: 7.5, weight: .semibold))
-                    .tracking(0.5)
-                    .foregroundStyle(.tertiary)
+                    .font(.system(size: 10.5, weight: .medium))
+                    .foregroundStyle(palette.secondary)
             }
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(text)
     }
 
     // MARK: - Quadrant Box
@@ -177,29 +175,30 @@ struct MatrixView: View {
                 // Empty-state hint — only shown when the quadrant has no pills.
                 if tasks.isEmpty {
                     Text(L10n.dropTasksHere)
-                        .font(.system(size: 9.5, weight: .medium))
-                        .foregroundStyle(color.opacity(0.45))
+                        .font(.system(size: 11))
+                        .foregroundStyle(palette.secondary)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .allowsHitTesting(false)
                 }
 
-                // Header (icon + small-caps label)
+                // Color identifies the quadrant; its title stays legible for custom colors.
                 HStack(spacing: 5) {
                     Image(systemName: quadrant.icon)
-                        .font(.system(size: 8.5, weight: .semibold))
-                    Text(label.uppercased())
-                        .font(.system(size: 8.5, weight: .bold))
-                        .tracking(0.9)
+                        .font(.system(size: 10.5, weight: .semibold)).foregroundStyle(color)
+                    Text(label)
+                        .font(.system(size: 11, weight: .medium)).foregroundStyle(palette.ink)
+                        .lineLimit(1).truncationMode(.tail).help(label)
                 }
-                .foregroundStyle(color)
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 9)
+                .padding(.trailing, matrixShowBadges && !tasks.isEmpty ? 28 : 0)
                 .padding(.vertical, 6)
 
                 // Count badge — minimal pill, top-right.
                 if matrixShowBadges && !tasks.isEmpty {
                     Text("\(tasks.count)")
-                        .font(.system(size: 9, weight: .semibold).monospacedDigit())
-                        .foregroundStyle(color)
+                        .font(.system(size: 10, weight: .medium).monospacedDigit())
+                        .foregroundStyle(palette.ink)
                         .padding(.horizontal, 5)
                         .padding(.vertical, 1.5)
                         .background(Capsule().fill(color.opacity(0.14)))
@@ -265,14 +264,13 @@ struct MatrixView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack {
                         Text(L10n.unassigned)
-                            .font(.system(size: 9, weight: .semibold))
-                            .tracking(1.2)
-                            .foregroundStyle(.tertiary)
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(palette.secondary)
                         Spacer()
                         if !unassigned.isEmpty {
                             Text("\(unassigned.count)")
-                                .font(.system(size: 9, weight: .semibold).monospacedDigit())
-                                .foregroundStyle(.tertiary)
+                                .font(.system(size: 10, weight: .medium).monospacedDigit())
+                                .foregroundStyle(palette.secondary)
                         }
                     }
                     .padding(.horizontal, 16)
@@ -282,8 +280,8 @@ struct MatrixView: View {
                         HStack {
                             Spacer()
                             Text(L10n.dropToRemove)
-                                .font(.system(size: 10, weight: .medium))
-                                .foregroundStyle(.tertiary)
+                                .font(.system(size: 11))
+                                .foregroundStyle(palette.secondary)
                             Spacer()
                         }
                         .frame(maxWidth: .infinity, minHeight: 36)
@@ -403,11 +401,6 @@ struct TaskDot: View {
         return min(raw, cap)
     }
 
-    /// Real on-screen size of this pill.
-    private var pillSize: CGSize {
-        MatrixLayout.pillSize(maxChars: maxChars, lineCount: lineCount, in: bounds.width)
-    }
-
     var body: some View {
         HStack(spacing: 5) {
             Circle()
@@ -460,7 +453,7 @@ struct TaskDot: View {
         .zIndex(isDragging ? 10 : (isHovering ? 5 : 0))
         .onHover { isHovering = $0 }
         .gesture(
-            DragGesture(minimumDistance: 0, coordinateSpace: .local)
+            DragGesture(minimumDistance: 0, coordinateSpace: .global)
                 .onChanged { value in
                     let dist = hypot(value.translation.width, value.translation.height)
                     if dist > dragMaxDistance { dragMaxDistance = dist }
@@ -532,89 +525,28 @@ struct TaskDot: View {
     // MARK: - Drag end
 
     private func handleDragEnd(value: DragGesture.Value) {
-        // Use predicted translation so a quick flick still carries through to
-        // the adjacent quadrant — the actual translation can stop just shy of
-        // the boundary if the user releases at peak velocity.
         guard let start = dragStartPosition else { return }
-        let predicted = value.predictedEndTranslation
-        let actual = value.translation
-
-        // Cross-over decision uses the predicted endpoint (intent-aware).
-        let predictedX = start.x + predicted.width
-        let predictedY = start.y + predicted.height
-
-        let crossedLeft   = predictedX < 0
-        let crossedRight  = predictedX > bounds.width
-        let crossedTop    = predictedY < 0
-        let crossedBottom = predictedY > bounds.height
-
-        if crossedLeft || crossedRight || crossedTop || crossedBottom {
-            // First — did the predicted endpoint land below the entire grid?
-            // If so, this is a "drop on Unassigned" gesture, regardless of
-            // which row the source lives in. Top-row sources need to clear
-            // both rows + the inter-row spacing before we count it as
-            // "below the grid" (otherwise they'd just cross to the bottom row).
-            let isTopRow = quadrant == .doFirst || quadrant == .schedule
-            let interRowSpacing: CGFloat = 4
-            let belowGridThreshold: CGFloat = isTopRow
-                ? bounds.height * 2 + interRowSpacing + 30
-                : bounds.height + 30
-            let droppedBelowGrid = crossedBottom && predictedY > belowGridThreshold
-
-            if droppedBelowGrid {
-                Store.shared.mutate(item.id) { item in
-                    item.quadrant = nil
-                    item.matrixX = nil
-                    item.matrixY = nil
-                }
-                return
+        let released = CGPoint(x: start.x + value.translation.width,
+                               y: start.y + value.translation.height)
+        switch MatrixLayout.dropTarget(from: quadrant, releasePoint: released, in: bounds) {
+        case .unassigned:
+            Store.shared.mutate(item.id) { item in
+                item.quadrant = nil
+                item.matrixX = nil
+                item.matrixY = nil
             }
-
-            let target: Quadrant?
-            switch quadrant {
-            case .doFirst:
-                // doFirst is top-left → diagonal exit (right + bottom) = eliminate.
-                target = if crossedRight && crossedBottom { .eliminate }
-                         else if crossedRight             { .schedule }
-                         else if crossedBottom            { .delegate }
-                         else                             { nil }
-            case .schedule:
-                // schedule is top-right → diagonal exit (left + bottom) = delegate.
-                target = if crossedLeft && crossedBottom  { .delegate }
-                         else if crossedLeft              { .doFirst }
-                         else if crossedBottom            { .eliminate }
-                         else                             { nil }
-            case .delegate:
-                // delegate is bottom-left → diagonal exit (right + top) = schedule.
-                target = if crossedRight && crossedTop    { .schedule }
-                         else if crossedRight             { .eliminate }
-                         else if crossedTop               { .doFirst }
-                         else                             { nil }
-            case .eliminate:
-                // eliminate is bottom-right → diagonal exit (left + top) = doFirst.
-                target = if crossedLeft && crossedTop     { .doFirst }
-                         else if crossedLeft              { .delegate }
-                         else if crossedTop               { .schedule }
-                         else                             { nil }
-            }
-
-            guard let target else {
-                // Diagonal exit (no matching neighbour) — settle back inside.
-                settleInside(actualX: start.x + actual.width, actualY: start.y + actual.height)
-                return
-            }
-
-            let (newX, newY) = entryPoint(into: target, finalX: predictedX, finalY: predictedY)
-            // Cross-quadrant move — no withAnimation wrapper (see note above).
+        case .quadrant(let target) where target == quadrant:
+            settleInside(actualX: released.x, actualY: released.y)
+        case .quadrant(let target):
+            let (x, y) = entryPoint(into: target, finalX: released.x, finalY: released.y)
+            let landing = MatrixLayout.clampedPosition(
+                CGPoint(x: x * bounds.width, y: y * bounds.height),
+                in: bounds, maxChars: maxChars, lineCount: lineCount)
             Store.shared.mutate(item.id) { item in
                 item.quadrant = target
-                item.matrixX = newX
-                item.matrixY = newY
+                item.matrixX = landing.x / max(bounds.width, 1)
+                item.matrixY = landing.y / max(bounds.height, 1)
             }
-        } else {
-            // Stayed inside — settle the pill to the actual cursor position
-            // (clamped to keep the whole pill within the quadrant border).
-            settleInside(actualX: start.x + actual.width, actualY: start.y + actual.height)
         }
     }
 
@@ -622,17 +554,10 @@ struct TaskDot: View {
     /// `.smooth` (critically damped) so there's no spring overshoot — the
     /// pill simply eases into its final resting place.
     private func settleInside(actualX: CGFloat, actualY: CGFloat) {
-        let halfW = pillSize.width / 2
-        let halfH = pillSize.height / 2
-        let pad: CGFloat = 4
-        let xMinFrac = (halfW + pad) / max(bounds.width, 1)
-        let xMaxFrac = max(xMinFrac + 0.001, (bounds.width - halfW - pad) / max(bounds.width, 1))
-        let yMinFrac = (halfH + pad) / max(bounds.height, 1)
-        let yMaxFrac = max(yMinFrac + 0.001, (bounds.height - halfH - pad) / max(bounds.height, 1))
-
-        let newX = clamp(actualX / bounds.width, xMinFrac, xMaxFrac)
-        let newY = clamp(actualY / bounds.height, yMinFrac, yMaxFrac)
-        let target = CGPoint(x: newX * bounds.width, y: newY * bounds.height)
+        let target = MatrixLayout.clampedPosition(
+            CGPoint(x: actualX, y: actualY), in: bounds, maxChars: maxChars, lineCount: lineCount)
+        let newX = target.x / max(bounds.width, 1)
+        let newY = target.y / max(bounds.height, 1)
 
         withAnimation(.smooth(duration: 0.22)) {
             position = target
@@ -677,14 +602,10 @@ struct TaskDot: View {
     // MARK: - Position seeding
 
     private func seedPosition() {
-        if let p = initialPosition {
-            position = p
-        } else {
-            position = CGPoint(
-                x: (item.matrixX ?? 0.5) * bounds.width,
-                y: (item.matrixY ?? 0.5) * bounds.height
-            )
-        }
+        let seed = initialPosition ?? CGPoint(
+            x: (item.matrixX ?? 0.5) * bounds.width,
+            y: (item.matrixY ?? 0.5) * bounds.height)
+        position = MatrixLayout.clampedPosition(seed, in: bounds, maxChars: maxChars, lineCount: lineCount)
     }
 
     private func clamp(_ value: Double, _ min: Double, _ max: Double) -> Double {

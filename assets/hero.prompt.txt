@@ -1,0 +1,8 @@
+Use case: ads-marketing
+Asset type: GitHub README hero cover for an open-source native macOS goal app called Polaris.
+Primary request: a refined, restrained product-brand illustration, wide 2:1 composition, suitable as a full-width README header. This is promotional artwork, not a screenshot.
+Input image: the attached image is the actual Polaris application icon. Preserve its recognizable black four-point star and single elliptical orbital ring. Use it as the brand mark on a porcelain-white macOS rounded-square app icon. Do not redesign the mark.
+Scene/backdrop: a warm off-white studio backdrop, a whisper of graphite and very subtle lime refracted light. Fine translucent glass layers and a delicate orbital line suggest focus and clarity. Calm, light, ample negative space, premium but quiet. No generic space galaxy or busy particles.
+Composition: large clean typography on the left, one sculptural app icon on the right with a soft grounded shadow and a small translucent glass arc behind it. Keep margins generous, content visible and centered vertically, no cropping of text or icon. Crisp graphic design combined with subtle realistic material rendering.
+Text (verbatim): "Polaris" as the large title, and "让目标，始终在眼前。" as one smaller Chinese subtitle, and "Native macOS · Open source" in a small supporting line. Typography should be clean, balanced, sharp and correctly spelled.
+Constraints: no fake app UI, no screenshots, no personal or task data, no Apple logo, no badges, no watermark, no extra words. Keep the existing brand mark true to the reference and the palette mostly porcelain white and charcoal.

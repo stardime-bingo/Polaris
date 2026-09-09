@@ -1,0 +1,71 @@
+{
+  "fill-specializations": [
+    {
+      "value": {
+        "solid": "srgb:1.00000,1.00000,1.00000,1.00000"
+      }
+    },
+    {
+      "appearance": "dark",
+      "value": {
+        "solid": "srgb:0.05882,0.05882,0.05882,1.00000"
+      }
+    },
+    {
+      "appearance": "tinted",
+      "value": {
+        "solid": "srgb:0.05882,0.05882,0.05882,1.00000"
+      }
+    }
+  ],
+  "groups": [
+    {
+      "name": "01 Polaris Original Alpha",
+      "blend-mode": "normal",
+      "blur-material": 0,
+      "layers": [
+        {
+          "name": "Polaris original PNG geometry",
+          "image-name-specializations": [
+            {
+              "value": "polaris-source-black.png"
+            },
+            {
+              "appearance": "dark",
+              "value": "polaris-source-white.png"
+            },
+            {
+              "appearance": "tinted",
+              "value": "polaris-source-white.png"
+            }
+          ],
+          "position": {
+            "scale": 0.7715269804822044,
+            "translation-in-points": [
+              -0.712781930370986,
+              -18.623726563519252
+            ]
+          },
+          "glass": false,
+          "hidden": false,
+          "opacity": 1
+        }
+      ],
+      "lighting": "individual",
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0
+      },
+      "specular": false,
+      "translucency": {
+        "enabled": false,
+        "value": 0
+      }
+    }
+  ],
+  "supported-platforms": {
+    "squares": [
+      "macOS"
+    ]
+  }
+}

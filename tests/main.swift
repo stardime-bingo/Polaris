@@ -144,10 +144,10 @@ func testRecurrence() {
 
 func testDueDateFormatter() {
     let today = cal.date(bySettingHour: 15, minute: 0, second: 0, of: Date())!
-    expect(DueDateFormatter.format(today).contains("Today"), "today is labeled Today")
+    expect(DueDateFormatter.format(today).contains("今天"), "today is labeled Today")
 
     let tomorrow = cal.date(byAdding: .day, value: 1, to: today)!
-    expect(DueDateFormatter.format(tomorrow).contains("Tomorrow"), "tomorrow is labeled Tomorrow")
+    expect(DueDateFormatter.format(tomorrow).contains("明天"), "tomorrow is labeled Tomorrow")
 }
 
 // MARK: - Color(hex:)
@@ -250,6 +250,28 @@ func testMatrixLayout() {
             expect(!rect(positions[i]).intersects(rect(positions[j])), "pills \(i) and \(j) do not overlap")
         }
     }
+
+    // M02: releasing or reopening a pill at the top must leave the title/badge clear.
+    let quadrantSize = CGSize(width: 184, height: 140)
+    for lines in 1...3 {
+        let testPill = MatrixLayout.pillSize(maxChars: 20, lineCount: lines, in: quadrantSize.width)
+        let released = MatrixLayout.clampedPosition(CGPoint(x: 92, y: -20), in: quadrantSize, maxChars: 20, lineCount: lines)
+        let restored = MatrixLayout.resolvePositions(seeds: [CGPoint(x: 0.5, y: 0)], in: quadrantSize, maxChars: 20, lineCount: lines)[0]
+        expect(released.y - testPill.height / 2 >= 32, "top release keeps header and gap clear for \(lines) lines")
+        expectEqual(restored, released, "restored and released top positions share safe bounds")
+        let bottom = MatrixLayout.clampedPosition(CGPoint(x: 500, y: 500), in: quadrantSize, maxChars: 20, lineCount: lines)
+        expect(bottom.x + testPill.width / 2 <= quadrantSize.width - 4 && bottom.y + testPill.height / 2 <= quadrantSize.height - 4,
+               "opposite edges keep the entire pill inside")
+    }
+    // M03: use the actual released point, including the reproduced right-column move.
+    expectEqual(MatrixLayout.dropTarget(from: .schedule, releasePoint: CGPoint(x: 60, y: 214), in: quadrantSize), .quadrant(.eliminate),
+                "right column release in lower quadrant cannot fling to unassigned")
+    expectEqual(MatrixLayout.dropTarget(from: .doFirst, releasePoint: CGPoint(x: 282, y: 70), in: quadrantSize), .quadrant(.schedule), "horizontal crossing")
+    expectEqual(MatrixLayout.dropTarget(from: .doFirst, releasePoint: CGPoint(x: 280, y: 214), in: quadrantSize), .quadrant(.eliminate), "diagonal crossing")
+    expectEqual(MatrixLayout.dropTarget(from: .eliminate, releasePoint: CGPoint(x: 90, y: -74), in: quadrantSize), .quadrant(.schedule), "return to upper quadrant")
+    expectEqual(MatrixLayout.dropTarget(from: .doFirst, releasePoint: CGPoint(x: 90, y: 335), in: quadrantSize), .unassigned, "release below whole grid clears assignment")
+    expectEqual(MatrixLayout.dropTarget(from: .eliminate, releasePoint: CGPoint(x: 90, y: 190), in: quadrantSize), .unassigned, "bottom row release into unassigned strip")
+    expectEqual(MatrixLayout.dropTarget(from: .doFirst, releasePoint: CGPoint(x: -20, y: 40), in: quadrantSize), .quadrant(.doFirst), "outside edge without a neighbor stays assigned")
 
     expect(MatrixLayout.resolvePositions(seeds: [], in: size, maxChars: 6, lineCount: 1).isEmpty,
            "empty seeds → empty result")
@@ -413,8 +435,269 @@ func testIconPalette() {
                 "displayName falls back to the raw symbol for unknown icons")
 }
 
+
+func testGoalBoard() {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(identifier: "Asia/Shanghai")!
+    func date(_ y: Int, _ m: Int, _ d: Int, _ h: Int = 0) -> Date {
+        calendar.date(from: DateComponents(year:y,month:m,day:d,hour:h))!
+    }
+    let now = date(2026,9,8,12)
+    var monthly = TodoItem(title: "月度发布", dueDate: date(2026,9,30))
+    monthly.goalPeriod = .month
+    monthly.createdAt = now
+    var annual = TodoItem(title: "年度方向", dueDate: date(2026,12,31))
+    annual.goalPeriod = .year; annual.isPinned = true
+    var other = TodoItem(title: "长期方向"); other.goalPeriod = .longTerm
+    expect(GoalFilter.month.includes(monthly, now:now, calendar:calendar), "current month goal is visible in month filter")
+    expect(!GoalFilter.year.includes(monthly, now:now, calendar:calendar), "month and annual horizons remain separate")
+    expect(GoalFilter.year.includes(annual, now:now, calendar:calendar), "annual goal is visible in year filter")
+    expect(GoalFilter.longTerm.includes(other, now:now, calendar:calendar), "undated long-term goal stays visible")
+    expect(!GoalFilter.month.includes(monthly, now:date(2026,10,1), calendar:calendar), "past month stays out of current-month filter")
+    expect(GoalFilter.all.includes(monthly, now:date(2026,10,1), calendar:calendar), "past goal remains accessible in all")
+    expectEqual(GoalPeriod.end(of:.month,from:date(2028,2,1),calendar:calendar),date(2028,2,29),"leap-year month end")
+    expectEqual(GoalPeriod.end(of:.year,from:now,calendar:calendar),date(2026,12,31),"year end")
+    expectEqual(GoalPeriod.end(of:.quarter,from:now,calendar:calendar),date(2026,9,30),"quarter end")
+    monthly.dueDate = date(2026,9,8,2)
+    expect(!monthly.isOverdue(at:now,calendar:calendar), "date-only target is not overdue during its final day")
+    monthly.hasDueTime = true
+    expect(monthly.isOverdue(at:now,calendar:calendar), "explicit due time is honored")
+    monthly.hasDueTime = false
+    expect(monthly.isOverdue(at:date(2026,9,9),calendar:calendar), "date-only target expires on next day")
+    expectEqual(DueDateFormatter.format(date(2026,9,30,2),now:now,calendar:calendar),"9月30日","date-only display hides inherited clock")
+    expect(DueDateFormatter.format(date(2026,9,30,2),hasTime:true,now:now,calendar:calendar).contains("02:00"), "explicit 24-hour time")
+    expectEqual(DueDateFormatter.remaining(date(2026,9,30),now:now,calendar:calendar),"还剩 22 天","calendar-day countdown")
+    expectEqual(GoalBoardRules.ordered([monthly,annual,other]).first?.id,annual.id,"pin outranks manual order")
+    expectEqual(GoalBoardRules.featured(in:[monthly,annual],preferredID:nil)?.id,annual.id,"first pin appears in menu bar")
+    monthly.isPinned = true
+    expectEqual(GoalBoardRules.featured(in:[monthly,annual],preferredID:annual.id.uuidString)?.id,annual.id,"explicit primary goal survives other pins")
+    annual.completedAt = now
+    expectEqual(GoalBoardRules.featured(in:[monthly,annual],preferredID:annual.id.uuidString)?.id,monthly.id,"completed primary falls back to next pin")
+    expect(GoalBoardRules.featured(in:[monthly],preferredID:"none") == nil,"explicit menu title off state")
+    expectEqual(GoalBoardRules.menuTitle("年度目标"),"年度目标","short title not truncated")
+    let long = String(repeating:"👨‍👩‍👧‍👦长期方向",count:12)
+    let shortened = GoalBoardRules.menuTitle(long)
+    expect(shortened.hasSuffix("…") && shortened.count <= 30,"long menu title is bounded without splitting graphemes")
+    expectEqual(GoalBoardRules.panelSize(availableHeight: 900), NSSize(width: 408, height: 560), "one panel frame for every route")
+    expectEqual(GoalBoardRules.panelSize(availableHeight: 500), NSSize(width: 408, height: 440), "small display reserves room outside the panel")
+    do {
+        var payload = try JSONSerialization.jsonObject(with:JSONEncoder().encode(monthly)) as! [String:Any]
+        payload.removeValue(forKey:"goalPeriod");payload.removeValue(forKey:"isPinned");payload.removeValue(forKey:"hasDueTime")
+        let legacy = try JSONDecoder().decode(TodoItem.self,from:JSONSerialization.data(withJSONObject:payload))
+        expectEqual(legacy.id,monthly.id,"legacy identity preserved")
+        expectEqual(legacy.dueDate,monthly.dueDate,"legacy timestamp preserved exactly")
+        expect(!legacy.hasDueTime && !legacy.isPinned,"legacy safe metadata defaults")
+        let roundtrip = try JSONDecoder().decode(TodoItem.self,from:JSONEncoder().encode(monthly))
+        expectEqual(roundtrip,monthly,"pin, horizon and precision survive restart serialization")
+    } catch { expect(false,"goal schema roundtrip: \(error)") }
+}
+
+func testGoalDeadlineEdgeCases() {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(identifier: "Asia/Shanghai")!
+    let now = calendar.date(from: DateComponents(year: 2026, month: 9, day: 8, hour: 12))!
+    var goal = TodoItem(title: "无硬截止日的月度目标")
+    goal.createdAt = now
+    goal.goalPeriod = .month
+    expect(GoalFilter.month.includes(goal, now: now, calendar: calendar), "monthly goal remains visible after removing its deadline")
+    goal.goalPeriod = .year
+    expect(GoalFilter.year.includes(goal, now: now, calendar: calendar), "annual goal without a deadline belongs to its creation year")
+    let nextYear = calendar.date(byAdding: .year, value: 1, to: now)!
+    expect(!GoalFilter.year.includes(goal, now: nextYear, calendar: calendar), "undated yearly goal does not leak into future years")
+    expect(GoalFilter.all.includes(goal, now: nextYear, calendar: calendar), "older undated annual goal remains accessible")
+    goal.dueDate = now; goal.hasDueTime = true; goal.isPinned = true
+    let annual = GoalScheduleRules.changingPeriod(goal, to: .year, now: now, calendar: calendar)
+    expectEqual(calendar.component(.month, from: annual.dueDate!), 12, "switching to annual selects December")
+    expectEqual(calendar.component(.day, from: annual.dueDate!), 31, "switching to annual selects final day")
+    expect(!annual.hasDueTime, "switching periods does not silently schedule a midnight deadline")
+    expectEqual(annual.id, goal.id, "period changes preserve goal identity")
+    expect(annual.isPinned, "period changes preserve the pin")
+    let longTerm = GoalScheduleRules.changingPeriod(goal, to: .longTerm, now: now, calendar: calendar)
+    expect(longTerm.dueDate == nil && !longTerm.hasDueTime, "long-term reset removes deadline and time precision together")
+    expectEqual(DueDateFormatter.remaining(now.addingTimeInterval(5400), hasTime: true, now: now, calendar: calendar), "还剩 1 小时", "precise deadline shows remaining hours")
+    expectEqual(DueDateFormatter.remaining(now.addingTimeInterval(-600), hasTime: true, now: now, calendar: calendar), "已过 10 分钟", "same-day expired time must not read today due")
+    expectEqual(DueDateFormatter.remaining(now.addingTimeInterval(30), hasTime: true, now: now, calendar: calendar), "即将截止", "less than a minute does not show zero minutes")
+    expectEqual(DueDateFormatter.remaining(now.addingTimeInterval(-30), hasTime: true, now: now, calendar: calendar), "刚刚超时", "precise expiration transition")
+    expectEqual(DueDateFormatter.remaining(now.addingTimeInterval(-600), now: now, calendar: calendar), "今天截止", "date-only deadlines retain whole-day semantics")
+}
+
+
+func testGoalDateInput() {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(identifier: "Asia/Shanghai")!
+    func date(_ y: Int, _ m: Int, _ d: Int, _ h: Int = 0) -> Date { calendar.date(from: DateComponents(year: y, month: m, day: d, hour: h))! }
+    let now = date(2026, 12, 30, 23)
+    for (input, expected) in [("今天", date(2026,12,30)), ("后天", date(2027,1,1)), ("下周", date(2027,1,6)), ("3天后", date(2027,1,2)), ("本月底", date(2026,12,31)), ("下月底", date(2027,1,31)), ("今年底", date(2026,12,31)), ("10月15日", date(2026,10,15)), ("2028-02-29", date(2028,2,29)), ("2027年1月8日", date(2027,1,8))] {
+        expectEqual(GoalDateParser.parse(input, now: now, calendar: calendar), expected, "Chinese date input: \(input)")
+    }
+    for invalid in ["2027-02-29", "2026-02-30", "2026-13-1", "2026-0-2", "2026-2-0", "2月30日", "某一天", "", "2027-01-08abc"] {
+        expect(GoalDateParser.parse(invalid, now: now, calendar: calendar) == nil, "reject invalid date: \(invalid)")
+    }
+    var goal = TodoItem(title: "长期目标", dueDate: date(2026,12,30,15))
+    goal.goalPeriod = .longTerm; goal.isPinned = true; goal.hasDueTime = true
+    let changed = GoalScheduleRules.changingDate(goal, to: date(2027,1,8), calendar: calendar)
+    expectEqual(changed.goalPeriod, .longTerm, "date choice does not change horizon")
+    expectEqual(changed.dueDate, date(2027,1,8,15), "date choice preserves explicit reminder time")
+    expectEqual(changed.id, goal.id, "date choice preserves identity")
+    expect(changed.isPinned, "date choice preserves pin")
+    let cleared = GoalScheduleRules.changingDate(goal, to: nil, calendar: calendar)
+    expect(cleared.dueDate == nil && !cleared.hasDueTime && cleared.recurrence == nil, "clear removes date and dependent scheduling")
+    expectEqual(cleared.goalPeriod, .longTerm, "clear date retains horizon")
+    calendar.timeZone = TimeZone(identifier: "America/Los_Angeles")!
+    let spring = date(2026,3,7,15)
+    expectEqual(GoalDateParser.parse("明天", now: spring, calendar: calendar), date(2026,3,8), "relative dates follow local calendar over DST")
+}
+
+func testGoalImportPlan() {
+    let base = TaskList(name: "月度", isDefault: true)
+    var incomingList = TaskList(name: "月度", remindersCalendarId: "external-calendar")
+    let incomingLabel = TaskLabel(name: "产品", listId: incomingList.id)
+    var goal = TodoItem(title: "发布课程")
+    goal.listId = incomingList.id; goal.labelIds = [incomingLabel.id]; goal.reminderId = "external-reminder"
+    func plan(_ export: DocketExport, existing: [TodoItem] = []) throws -> GoalImportPlan {
+        try GoalImportPlan(data: JSONEncoder().encode(export), lists: [base], labels: [], tasks: existing, activeListID: base.id, supportedVersion: 2)
+    }
+    do {
+        let exported = DocketExport(schemaVersion: 1, lists: [incomingList], labels: [incomingLabel], tasks: [goal])
+        let result = try plan(exported)
+        expect(result.lists.isEmpty, "import merges same-name lists")
+        expectEqual(result.tasks.first?.listId, base.id, "import remaps task to surviving list")
+        expectEqual(result.labels.first?.listId, base.id, "import remaps label to surviving list")
+        expectEqual(result.tasks.first?.labelIds, [incomingLabel.id], "import retains label relationship")
+        expect(result.tasks.first?.reminderId == nil, "import cannot adopt external Apple reminder binding")
+        let duplicate = try plan(exported, existing: [goal])
+        expect(duplicate.tasks.isEmpty && duplicate.skipped == 1, "import skips existing goals")
+        incomingList.name = "年度"
+        let newList = try plan(DocketExport(lists: [incomingList], labels: [], tasks: [goal]))
+        expect(newList.lists.first?.remindersCalendarId == nil, "import cannot adopt external calendar binding")
+        expect(newList.tasks.first?.labelIds.isEmpty == true, "import strips orphan labels")
+        do { _ = try plan(DocketExport(schemaVersion: 999, lists: [], labels: [], tasks: [])); expect(false, "future schema rejected") }
+        catch { expect(true, "future schema rejected before mutation") }
+        do { _ = try plan(DocketExport(lists: [], labels: [], tasks: [goal, goal])); expect(false, "duplicate UUID rejected") }
+        catch { expect(true, "duplicate UUID rejected before mutation") }
+        do { _ = try GoalImportPlan(data: Data("{}".utf8), lists: [base], labels: [], tasks: [], activeListID: base.id, supportedVersion: 2); expect(false, "invalid JSON shape rejected") }
+        catch { expect(true, "invalid JSON shape rejected before mutation") }
+        let legacy = try GoalImportPlan(data: JSONEncoder().encode([goal]), lists: [base], labels: [], tasks: [], activeListID: base.id, supportedVersion: 2)
+        expectEqual(legacy.tasks.first?.listId, base.id, "legacy import uses current list")
+    } catch { expect(false, "valid backup imports: \(error)") }
+}
+
+func testWeeklyGoals() {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(identifier: "Asia/Shanghai")!
+    calendar.firstWeekday = 1 // User locale must not turn a goal week into Sunday–Saturday.
+    func date(_ year: Int, _ month: Int, _ day: Int, _ hour: Int = 0) -> Date {
+        calendar.date(from: DateComponents(year: year, month: month, day: day, hour: hour))!
+    }
+    let now = date(2026, 9, 8, 12)
+    let source = TodoItem(title: "周目标", notes: "保留原描述", steps: [GoalStep(title: "访谈")])
+    let weekly = GoalScheduleRules.changingPeriod(source, to: .week, now: now, calendar: calendar)
+    expectEqual(weekly.dueDate, date(2026, 9, 13), "weekly deadline defaults to Sunday at date-only midnight")
+    expectEqual(weekly.goalPeriod, .week, "weekly period is explicit")
+    expectEqual(weekly.notes, source.notes, "changing to week preserves goal description")
+    expectEqual(weekly.steps, source.steps, "changing to week preserves checklist")
+    expect(!weekly.hasDueTime, "weekly deadlines do not invent a precise midnight alarm")
+    expect(GoalFilter.week.includes(weekly, now: now, calendar: calendar), "this-week filter includes Sunday deadline")
+    expect(GoalFilter.week.includes(weekly, now: date(2026, 9, 13, 23), calendar: calendar), "Sunday stays in same week")
+    expect(!GoalFilter.week.includes(weekly, now: date(2026, 9, 14), calendar: calendar), "previous week excluded exactly on Monday")
+    expect(GoalFilter.all.includes(weekly, now: date(2026, 9, 14), calendar: calendar), "older weekly goals remain in all")
+    expect(!GoalFilter.month.includes(weekly, now: now, calendar: calendar), "weekly goals are not mixed into month classification")
+    var crossYear = weekly
+    crossYear.dueDate = date(2027, 1, 3)
+    expect(GoalFilter.week.includes(crossYear, now: date(2026, 12, 28), calendar: calendar), "cross-year Sunday matches December Monday")
+    expect(GoalFilter.week.includes(crossYear, now: date(2027, 1, 1), calendar: calendar), "same ISO week remains together after year change")
+    crossYear.dueDate = date(2027, 1, 4)
+    expect(!GoalFilter.week.includes(crossYear, now: date(2027, 1, 3), calendar: calendar), "next Monday not included at half-open boundary")
+    var undated = weekly; undated.dueDate = nil; undated.createdAt = now
+    expect(GoalFilter.week.includes(undated, now: now, calendar: calendar), "undated weekly goal uses creation week")
+    expectEqual(GoalDateParser.parse("本周末", now: now, calendar: calendar), date(2026, 9, 13), "weekly quick text selects Sunday")
+    expectEqual(GoalDateParser.parse("下周末", now: now, calendar: calendar), date(2026, 9, 20), "next weekend uses next goal week")
+    calendar.timeZone = TimeZone(identifier: "America/Los_Angeles")!
+    expectEqual(GoalPeriod.end(of: .weekOfYear, from: date(2026, 3, 4), calendar: calendar), date(2026, 3, 8), "spring DST week ends on local Sunday")
+    expectEqual(GoalPeriod.end(of: .weekOfYear, from: date(2026, 10, 28), calendar: calendar), date(2026, 11, 1), "autumn DST week ends on local Sunday")
+    let spring = GoalPeriod.weekInterval(containing: date(2026, 3, 4), calendar: calendar)
+    expectEqual(spring.duration, 167 * 3600, "week boundaries follow local DST rather than 168-hour arithmetic")
+}
+
+func testGoalSteps() {
+    let completed = GoalStep(title: "联系三位客户", isCompleted: true)
+    let draft = TodoItem(title: "用户研究", notes: "原有自由文字\n完整保留", steps: [completed, GoalStep(title: "写出结论")])
+    do {
+        let data = try JSONEncoder().encode(draft)
+        let decoded = try JSONDecoder().decode(TodoItem.self, from: data)
+        expectEqual(decoded, draft, "goal and step identifiers, order, completion round trip")
+        var legacy = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+        legacy.removeValue(forKey: "steps")
+        let old = try JSONDecoder().decode(TodoItem.self, from: JSONSerialization.data(withJSONObject: legacy))
+        expect(old.steps.isEmpty, "legacy goal decodes without checklist migration")
+        expectEqual(old.notes, draft.notes, "legacy description is not transformed into guessed steps")
+        let clean = GoalStep.normalized([GoalStep(title: " \n "), GoalStep(title: "  第一项  "), completed, completed])
+        expectEqual(clean.count, 3, "empty draft rows do not become stored steps")
+        expectEqual(clean.first?.title, "第一项", "step whitespace trimmed")
+        expectEqual(Set(clean.map(\.id)).count, clean.count, "duplicate step identities repaired before a SwiftUI binding list")
+        let next = completed.forNextOccurrence()
+        expect(next.id != completed.id && !next.isCompleted && next.title == completed.title, "next recurrence has fresh unfinished steps")
+        var weekly = draft; weekly.goalPeriod = .week
+        expectEqual(try JSONDecoder().decode(TodoItem.self, from: JSONEncoder().encode(weekly)).goalPeriod, .week, "weekly period survives JSON round trip")
+        let list = TaskList(name: "目标", isDefault: true)
+        let plan = try GoalImportPlan(data: JSONEncoder().encode([draft]), lists: [list], labels: [], tasks: [], activeListID: list.id, supportedVersion: 2)
+        expectEqual(plan.tasks.first?.steps, draft.steps, "backup import keeps checklist progress and order")
+        var invalid = draft; invalid.steps.append(completed)
+        do {
+            _ = try GoalImportPlan(data: JSONEncoder().encode([invalid]), lists: [list], labels: [], tasks: [], activeListID: list.id, supportedVersion: 2)
+            expect(false, "duplicate imported step IDs must fail")
+        } catch { expect(true, "duplicate imported step IDs rejected before mutation") }
+    } catch { expect(false, "checklist storage compatibility: \(error)") }
+}
+
+func testShortcutRecordingRules() {
+    let flags: NSEvent.ModifierFlags = [.control, .option, .shift, .command, .capsLock, .numericPad]
+    let carbon = HotkeyMapping.carbonModifiers(fromCocoa: flags)
+    expectEqual(carbon, controlKey | optionKey | shiftKey | cmdKey, "capture retains exactly four hotkey modifiers")
+    expectEqual(HotkeyMapping.cocoaModifiers(fromCarbon: UInt32(carbon)), [.control, .option, .shift, .command], "recorded modifier round trip")
+    expect(HotkeyMapping.validationError(keyCode: kVK_ANSI_Q, modifiers: optionKey | controlKey) == nil, "custom key outside old presets accepted")
+    expect(HotkeyMapping.validationError(keyCode: kVK_F12, modifiers: controlKey) == nil, "function-key combination accepted")
+    expect(HotkeyMapping.validationError(keyCode: kVK_ANSI_Q, modifiers: 0) != nil, "plain typing cannot become a global shortcut")
+    expect(HotkeyMapping.validationError(keyCode: kVK_ANSI_Q, modifiers: shiftKey) != nil, "shift-only typing is protected")
+    expect(HotkeyMapping.validationError(keyCode: kVK_Space, modifiers: cmdKey) != nil, "Spotlight shortcut rejected explicitly")
+    expect(HotkeyMapping.validationError(keyCode: kVK_Space, modifiers: controlKey | shiftKey) == nil, "existing Ctrl Shift Space remains valid")
+    expect(HotkeyMapping.validationError(keyCode: -1, modifiers: cmdKey) != nil, "invalid key code rejected without UInt32 trap")
+    expectEqual(HotkeyMapping.keyLabel(keyCode: kVK_F12), "F12", "function key displayed by name")
+    expectEqual(HotkeyMapping.keyLabel(keyCode: kVK_LeftArrow), "←", "arrow displayed by symbol")
+    expectEqual(HotkeyMapping.displayString(keyCode: kVK_ANSI_Q, modifiers: controlKey | optionKey, recordedLabel: "q"), "⌃⌥ Q", "arbitrary captured key uses its real label")
+}
+
+func testEditorNavigationIdentity() {
+    let goal = TodoItem(title: "Same goal opened twice")
+    let original = NavDestination.detail(goal)
+    let reopened = NavDestination.detail(goal)
+    expect(original.editorID != reopened.editorID, "same goal gets distinct navigation identities")
+    expect(original != reopened, "duplicate goal visits are distinct SwiftUI destinations")
+    let newA = NavDestination.create(), newB = NavDestination.create()
+    expect(newA.editorID != newB.editorID, "each new draft gets its own navigation identity")
+    var path: [NavDestination] = [original, .settings, .matrix, reopened]
+    expectEqual(path.last?.editorID, reopened.editorID, "top editor owns save and escape")
+    expect(path.last?.editorID != original.editorID, "hidden instance of same goal does not own keyboard command")
+    path.removeLast()
+    expect(path.last?.editorID == nil, "matrix cannot route editor save")
+    expect(path.contains(where: \.isEditor), "closing settings keeps original editor route")
+    path.removeLast(2)
+    expectEqual(path.last?.editorID, original.editorID, "back navigation restores original editor identity")
+    expectEqual(path.first, original, "original draft destination survives nested settings unchanged")
+    expect(![NavDestination.settings, .advancedSettings, .completed, .matrix].contains(where: \.isEditor), "non-editor routes do not retain a phantom draft")
+}
+
 // MARK: - Run
 
+testEditorNavigationIdentity()
+testWeeklyGoals()
+testGoalSteps()
+testShortcutRecordingRules()
+
+testGoalImportPlan()
+testGoalBoard()
+testGoalDateInput()
+testGoalDeadlineEdgeCases()
 testDateParser()
 testRecurrence()
 testDueDateFormatter()

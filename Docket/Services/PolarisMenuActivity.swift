@@ -1,7 +1,7 @@
 import AppKit
 import Observation
 
-/// Reserves one fixed status slot alongside the unmodified brand artwork.
+/// Shares one compact slot between the brand artwork and sync feedback.
 /// Only a real, visible sync drives frames; idle owns no timer.
 final class PolarisMenuActivity {
     private weak var button: NSStatusBarButton?
@@ -64,17 +64,18 @@ final class PolarisMenuActivity {
         let busy = RemindersSync.shared.isSyncing
         let failed = RemindersSync.shared.lastError != nil
         let logo = PolarisSymbol.menuImage()
-        let image = NSImage(size: NSSize(width: 44, height: 18), flipped: false) { _ in
-            logo.draw(in: NSRect(x: 0, y: 0, width: 24, height: 18))
+        let image = NSImage(size: NSSize(width: 24, height: 18), flipped: false) { _ in
             if let phase {
                 for index in 0..<3 {
                     NSColor.black.withAlphaComponent(1 - Double(index) * 0.24).setFill()
                     let angle = phase + Double(index) * .pi * 2 / 3
-                    NSBezierPath(ovalIn: NSRect(x: 34.5 + cos(angle) * 4.5 - 1.5, y: 9 + sin(angle) * 4.5 - 1.5, width: 3, height: 3)).fill()
+                    NSBezierPath(ovalIn: NSRect(x: 12 + cos(angle) * 4.5 - 1.5, y: 9 + sin(angle) * 4.5 - 1.5, width: 3, height: 3)).fill()
                 }
             } else if busy || failed {
                 let icon = NSImage(systemSymbolName: failed ? "exclamationmark.circle" : "arrow.triangle.2.circlepath", accessibilityDescription: nil)
-                icon?.draw(in: NSRect(x: 29, y: 3, width: 12, height: 12))
+                icon?.draw(in: NSRect(x: 6, y: 3, width: 12, height: 12))
+            } else {
+                logo.draw(in: NSRect(x: 0, y: 0, width: 24, height: 18))
             }
             return true
         }

@@ -282,7 +282,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         button.image?.isTemplate = true
         button.imagePosition = .imageLeading
         button.font = NSFont.menuBarFont(ofSize: 13)
-        button.title = goal.map { " " + GoalBoardRules.menuTitle($0.title) } ?? ""
+        button.title = goal.map { GoalBoardRules.menuTitle($0.title) } ?? ""
         button.toolTip = goal.map { goal in goal.title + (goal.dueDate.map { "\n" + DueDateFormatter.format($0, hasTime: goal.hasDueTime) } ?? "") } ?? "Polaris · 目标"
         button.setAccessibilityLabel(goal.map { "主目标：" + $0.title } ?? "Polaris 目标")
         DispatchQueue.main.async { [weak self] in self?.writeRuntimeState() }

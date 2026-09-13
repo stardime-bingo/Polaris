@@ -16,10 +16,6 @@ struct TaskRowView: View {
     @AppStorage("matrixScheduleLabel") private var scheduleLabel = "持续投入"
     @AppStorage("matrixDelegateLabel") private var delegateLabel = "委派协作"
     @AppStorage("matrixEliminateLabel") private var eliminateLabel = "暂时放下"
-    @AppStorage("matrixDoFirstColor") private var doFirstColor = "#EF4444"
-    @AppStorage("matrixScheduleColor") private var scheduleColor = "#3B82F6"
-    @AppStorage("matrixDelegateColor") private var delegateColor = "#F59E0B"
-    @AppStorage("matrixEliminateColor") private var eliminateColor = "#9CA3AF"
     @State private var hovered = false
     private var featured: Bool { showMenuGoal && Store.shared.menuBarGoal?.id == item.id }
     private var countdown: String { DueDateFormatter.countdown(item.dueDate, hasTime: item.hasDueTime, isCompleted: item.isCompleted, now: now) }
@@ -31,16 +27,6 @@ struct TaskRowView: View {
         case .delegate: delegateLabel
         case .eliminate: eliminateLabel
         }
-    }
-    private func quadrantColor(_ quadrant: Quadrant) -> Color {
-        let hex: String
-        switch quadrant {
-        case .doFirst: hex = doFirstColor
-        case .schedule: hex = scheduleColor
-        case .delegate: hex = delegateColor
-        case .eliminate: hex = eliminateColor
-        }
-        return palette.readableColor(hex: hex, minimum: 3)
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -57,8 +43,8 @@ struct TaskRowView: View {
                           HStack(alignment: .top, spacing: 8) {
                               Image(systemName: step.isCompleted ? "checkmark.circle.fill" : "circle")
                                   .font(.system(size: 13)).frame(width: 16, height: 20)
-                                  .foregroundStyle(step.isCompleted ? palette.accentInk : palette.muted)
-                              Text(step.title).font(.system(size: 12.5))
+                                  .foregroundStyle(palette.secondary)
+                              Text(step.title).font(PolarisType.detail)
                                   .foregroundStyle(step.isCompleted ? palette.secondary : palette.ink)
                                   .strikethrough(step.isCompleted, color: palette.muted.opacity(0.6))
                                   .fixedSize(horizontal: false, vertical: true).lineSpacing(3)
@@ -109,13 +95,13 @@ struct TaskRowView: View {
             }.frame(width: 24, height: 20).foregroundStyle(featured ? (palette.isDark ? Color.white : Color.black) : palette.muted)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 3) {
-                Text(item.title).font(.system(size: 14, weight: featured ? .medium : .regular))
+                Text(item.title).font(PolarisType.title)
                     .foregroundStyle(palette.ink).lineSpacing(3)
                     .fixedSize(horizontal: false, vertical: true)
                 HStack(spacing: 10) {
                     if let quadrant = item.quadrant {
                         HStack(spacing: 4) {
-                            Image(systemName: quadrant.icon).foregroundStyle(quadrantColor(quadrant))
+                            Image(systemName: quadrant.icon).font(.system(size: 10)).foregroundStyle(palette.muted)
                             Text(quadrantLabel(quadrant)).lineLimit(1)
                         }.foregroundStyle(palette.secondary)
                             .help(quadrantLabel(quadrant))
@@ -124,13 +110,13 @@ struct TaskRowView: View {
                     }
                     Spacer(minLength: 0)
                     Text(countdown).monospacedDigit().fixedSize()
-                        .foregroundStyle(item.isOverdue(at: now) ? palette.accentInk : palette.secondary)
+                        .foregroundStyle(palette.secondary)
                         .help(deadline)
                         .accessibilityLabel(item.dueDate == nil ? countdown : "\(countdown)，\(deadline)")
-                }.font(.system(size: 11)).frame(minHeight: 18)
+                }.font(PolarisType.metadata).frame(minHeight: 17)
                 if !item.steps.isEmpty {
                     Text("\(item.steps.filter(\.isCompleted).count) / \(item.steps.count) 子任务")
-                        .font(.system(size: 10.5)).monospacedDigit().foregroundStyle(palette.secondary)
+                        .font(PolarisType.metadata).monospacedDigit().foregroundStyle(palette.secondary)
                         .contentTransition(.numericText())
                         .accessibilityLabel("子任务已完成 \(item.steps.filter(\.isCompleted).count) 个，共 \(item.steps.count) 个")
                 }

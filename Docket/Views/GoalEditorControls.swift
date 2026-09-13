@@ -27,7 +27,7 @@ struct GoalOptionLabel: View {
             Text(value).foregroundStyle(palette.ink).multilineTextAlignment(.trailing)
             if chevron { Image(systemName: "chevron.down").font(.system(size: 9)).foregroundStyle(palette.muted) }
         }
-        .font(.system(size: 12.5))
+        .font(PolarisType.title)
         .frame(minHeight: 36)
         .frame(maxWidth: .infinity).contentShape(Rectangle())
     }

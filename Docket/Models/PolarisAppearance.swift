@@ -37,6 +37,43 @@ struct PolarisRGB: Equatable {
         self.blue = max(0, min(1, blue))
     }
 
+    /// HSB operates on encoded sRGB channels. Hue wraps every turn; saturation
+    /// and brightness clamp to 0...1. Non-finite components resolve to zero.
+    init(hue: Double, saturation: Double, brightness: Double) {
+        let remainder = hue.isFinite ? hue.truncatingRemainder(dividingBy: 1) : 0
+        let sector = (remainder < 0 ? remainder + 1 : remainder) * 6
+        let saturation = saturation.isFinite ? max(0, min(1, saturation)) : 0
+        let brightness = brightness.isFinite ? max(0, min(1, brightness)) : 0
+        let chroma = brightness * saturation
+        let intermediate = chroma * (1 - abs(sector.truncatingRemainder(dividingBy: 2) - 1))
+        let offset = brightness - chroma
+        let channels: (Double, Double, Double)
+        switch sector {
+        case ..<1: channels = (chroma, intermediate, 0)
+        case ..<2: channels = (intermediate, chroma, 0)
+        case ..<3: channels = (0, chroma, intermediate)
+        case ..<4: channels = (0, intermediate, chroma)
+        case ..<5: channels = (intermediate, 0, chroma)
+        default: channels = (chroma, 0, intermediate)
+        }
+        self.init(red: channels.0 + offset, green: channels.1 + offset, blue: channels.2 + offset)
+    }
+
+    /// Hue is in 0..<1. Achromatic colors have hue and saturation zero;
+    /// a picker may retain its previous hue independently while editing gray.
+    var hsb: (hue: Double, saturation: Double, brightness: Double) {
+        let brightness = max(red, max(green, blue))
+        let chroma = brightness - min(red, min(green, blue))
+        guard chroma > 0, brightness > 0 else { return (0, 0, brightness) }
+        let sector: Double
+        if brightness == red { sector = (green - blue) / chroma }
+        else if brightness == green { sector = (blue - red) / chroma + 2 }
+        else { sector = (red - green) / chroma + 4 }
+        let hue = sector / 6
+        let wrappedHue = hue < 0 ? hue + 1 : hue
+        return (wrappedHue < 1 ? wrappedHue : 0, chroma / brightness, brightness)
+    }
+
     /// Accept RGB or RRGGBB with one optional #; reject alpha and partial input.
     init?(hex: String) {
         var digits = hex.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -95,17 +132,17 @@ struct PolarisPalette {
     var accentStyle: PolarisAccent = .klein
     var customAccentHex: String? = nil
     var isDark: Bool { surfaceStyle == .graphite }
-    var surfaceRGB: PolarisRGB { PolarisRGB(hex: isDark ? "202124" : surfaceStyle == .mist ? "FAFBFC" : "FCFAF6")! }
-    var raisedRGB: PolarisRGB { PolarisRGB(hex: isDark ? "292A2D" : surfaceStyle == .mist ? "FFFFFF" : "FFFDFA")! }
-    var selectionRGB: PolarisRGB { PolarisRGB(hex: isDark ? "343539" : surfaceStyle == .mist ? "E8EAEE" : "EAE6DF")! }
-    var hoverRGB: PolarisRGB { PolarisRGB(hex: isDark ? "2B2C30" : surfaceStyle == .mist ? "F0F1F4" : "F2EFE9")! }
-    var pressedRGB: PolarisRGB { PolarisRGB(hex: isDark ? "3E4045" : surfaceStyle == .mist ? "DFE2E8" : "E0DAD0")! }
+    var surfaceRGB: PolarisRGB { PolarisRGB(hex: isDark ? "202124" : surfaceStyle == .mist ? "FFFFFF" : "FFFEFC")! }
+    var raisedRGB: PolarisRGB { PolarisRGB(hex: isDark ? "292A2D" : "FFFFFF")! }
+    var selectionRGB: PolarisRGB { PolarisRGB(hex: isDark ? "323338" : "EFF0F2")! }
+    var hoverRGB: PolarisRGB { PolarisRGB(hex: isDark ? "2A2B2F" : "F7F7F8")! }
+    var pressedRGB: PolarisRGB { PolarisRGB(hex: isDark ? "3A3B40" : "E8E9EB")! }
     var surface: Color { surfaceRGB.color }
     var raised: Color { raisedRGB.color }
-    var ink: Color { Color(hex: isDark ? "ECEDEF" : surfaceStyle == .mist ? "292C33" : "302D2A") }
-    var secondary: Color { Color(hex: isDark ? "B0B3BA" : surfaceStyle == .mist ? "59616C" : "625B51") }
-    var muted: Color { Color(hex: isDark ? "A9ADB6" : surfaceStyle == .mist ? "5E6570" : "655E53") }
-    var line: Color { Color(hex: isDark ? "37383C" : surfaceStyle == .mist ? "DCDFE4" : "E1DDD6") }
+    var ink: Color { Color(hex: isDark ? "ECEDEF" : "1D1D1F") }
+    var secondary: Color { Color(hex: isDark ? "B0B3BA" : "65656B") }
+    var muted: Color { Color(hex: isDark ? "A9ADB6" : "6D6D73") }
+    var line: Color { Color(hex: isDark ? "37383C" : "E7E7EA") }
     var hover: Color { hoverRGB.color }
     var pressed: Color { pressedRGB.color }
     var accentRGB: PolarisRGB { customAccentHex.flatMap({ PolarisRGB(hex: $0) }) ?? PolarisRGB(hex: accentStyle.hex)! }

@@ -4,68 +4,76 @@
 
 import SwiftUI
 
-/// A reversible completion with time to react, including keyboard users.
+/// A compact completion receipt. Each new completion gets its own 2.2 seconds.
 struct UndoToast: View {
     let message: String
     let trigger: Int
     let onUndo: () -> Void
     @Binding var isVisible: Bool
 
+    @AppStorage("showConfetti") private var showConfetti = true
+    @AppStorage("polarisMotionEnabled") private var motion = true
     @Environment(\.polarisPalette) private var palette
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    private var accent: Color { palette.action }
-
-    @State private var dismissTask: DispatchWorkItem?
 
     var body: some View {
-        if isVisible {
-            HStack(spacing: 12) {
-                Image(systemName: "checkmark.circle.fill")
-                    .font(.body)
-                    .foregroundStyle(.green)
+        Group {
+            if isVisible {
+                HStack(spacing: 8) {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 10.5, weight: .semibold))
+                        .foregroundStyle(palette.accentInk)
+                        .frame(width: 18, height: 18)
+                        .background(Circle().fill(palette.accentInk.opacity(0.09)))
+                        .overlay {
+                            ConfettiOverlay(trigger: trigger, enabled: showConfetti && motion)
+                        }
+                        .accessibilityHidden(true)
 
-                Text(message)
-                    .font(.subheadline.weight(.medium))
+                    Text(message)
+                        .font(.system(size: 12, weight: .regular))
+                        .foregroundStyle(palette.ink)
+                        .lineLimit(1)
+                        .layoutPriority(1)
 
-                Spacer()
+                    Spacer(minLength: 8)
 
-                Button {
-                    onUndo()
-                    dismiss()
-                } label: {
-                    Text(L10n.undo)
-                        .font(.subheadline.bold())
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 5)
-                        .background(Capsule().fill(accent))
-                        .foregroundStyle(palette.actionText)
+                    Button {
+                        onUndo()
+                        dismiss()
+                    } label: {
+                        Text(L10n.undo)
+                            .font(.system(size: 11, weight: .regular))
+                            .foregroundStyle(palette.ink)
+                            .padding(.horizontal, 2)
+                            .frame(height: 28)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
+                .padding(.horizontal, 12)
+                .frame(minWidth: 180, maxWidth: 220)
+                .frame(height: 32)
+                .fixedSize(horizontal: true, vertical: true)
+                .background(Capsule().fill(palette.raised))
+                .overlay(Capsule().strokeBorder(palette.line, lineWidth: 0.5))
+                .shadow(color: palette.ink.opacity(0.08), radius: 5, y: 2)
+                .transition(.opacity)
+                .task(id: trigger) {
+                    do {
+                        try await Task.sleep(for: .milliseconds(2200))
+                        try Task.checkCancellation()
+                        dismiss()
+                    } catch {
+                        // Replacement completions and navigation cancel this timer.
+                    }
+                }
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
-            .background(RoundedRectangle(cornerRadius: 12).fill(.regularMaterial))
-            .padding(.horizontal, 12)
-            .transition(.move(edge: .bottom).combined(with: .opacity))
-            .onChange(of: trigger) { _, _ in scheduleAutoDismiss() }
-            .onAppear { scheduleAutoDismiss() }
-            .onHover { hovering in
-                if hovering { dismissTask?.cancel() } else { scheduleAutoDismiss() }
-            }
-            .onDisappear { dismissTask?.cancel() }
         }
-    }
-
-    private func scheduleAutoDismiss() {
-        dismissTask?.cancel()
-        let task = DispatchWorkItem { dismiss() }
-        dismissTask = task
-        DispatchQueue.main.asyncAfter(deadline: .now() + 8, execute: task)
+        .animation(motion && !reduceMotion ? .easeOut(duration: 0.14) : nil, value: isVisible)
     }
 
     private func dismiss() {
-        dismissTask?.cancel()
-        dismissTask = nil
-        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) { isVisible = false }
+        isVisible = false
     }
 }

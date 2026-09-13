@@ -1,4 +1,4 @@
-// Polaris — compact native goal list, following the frozen v5 design.
+// Polaris — compact native goal list.
 import SwiftUI
 import AppKit
 
@@ -7,7 +7,6 @@ struct TaskListView: View {
     var store = Store.shared
     @AppStorage("goalFilter") private var filterRaw = GoalFilter.all.rawValue
     @AppStorage("panelShortcutsEnabled") private var localKeys = true
-    @AppStorage("showConfetti") private var showConfetti = true
     @AppStorage("polarisMotionEnabled") private var motion = true
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.polarisPalette) private var palette
@@ -21,7 +20,6 @@ struct TaskListView: View {
     @State private var undoItem: TodoItem?
     @State private var showUndo = false
     @State private var undoTrigger = 0
-    @State private var celebrationTrigger = 0
     private var filter: GoalFilter { GoalFilter(rawValue: filterRaw) ?? .all }
     private var items: [TodoItem] {
         let visible = store.activeTasks.filter { item in
@@ -48,7 +46,7 @@ struct TaskListView: View {
             PolarisGlassGroup {
               HStack(spacing: 9) {
                 Image(systemName: "magnifyingglass").font(.system(size: 13, weight: .light)).foregroundStyle(palette.muted)
-                PolarisSearchField(text: $search, placeholder: "搜索目标…", focusGeneration: focusGeneration,
+                PolarisSearchField(text: $search, placeholder: "搜索目标…", fontSize: 13, focusGeneration: focusGeneration,
                     onMove: moveSelection, onSubmit: editSelected, onEscape: escape, shortcutsEnabled: localKeys)
                     .frame(height: 25)
                 Menu {
@@ -61,7 +59,7 @@ struct TaskListView: View {
                     }
                 } label: { HStack(spacing: 5) { Text(filterTitle(filter)); Image(systemName: "chevron.down").font(.system(size: 8)) }.font(.system(size: 11)).foregroundStyle(palette.secondary) }
                 .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().tint(palette.secondary).accessibilityLabel("筛选目标")
-              }.padding(.horizontal, 10).frame(height: 32).polarisGlassSurface()
+              }.padding(.horizontal, 10).frame(height: 32)
             }.padding(.horizontal, 12).frame(height: 48)
             Rectangle().fill(palette.line).frame(height: 0.5)
             ScrollViewReader { proxy in
@@ -83,9 +81,8 @@ struct TaskListView: View {
             footer
         }
         .overlay(alignment: .bottom) {
-            UndoToast(message: "目标已达成", trigger: undoTrigger, onUndo: undo, isVisible: $showUndo).padding(.bottom, 38)
+            UndoToast(message: "目标已达成", trigger: undoTrigger, onUndo: undo, isVisible: $showUndo).padding(.bottom, 50)
         }
-        .overlay { ConfettiOverlay(trigger: celebrationTrigger, enabled: showConfetti && motion) }
         .onChange(of: showUndo) { _, value in presentation.canUndoCompletion = value }
         .onAppear { ensureSelection(); focusGeneration += 1 }
         .onChange(of: selectedID) { _, id in
@@ -225,7 +222,7 @@ struct TaskListView: View {
         guard store.items.contains(where: { $0.id == item.id && !$0.isCompleted }) else { return }
         guard store.complete(item) else { return }
         undoItem = item; showUndo = true
-        presentation.canUndoCompletion = true; undoTrigger += 1; celebrationTrigger += 1
+        presentation.canUndoCompletion = true; undoTrigger += 1
     }
     private func undo() { presentation.canUndoCompletion = false; if let undoItem { store.undoCompletion(undoItem) }; undoItem = nil }
 }

@@ -23,7 +23,8 @@ The hero is AI-generated brand artwork. Product screenshots come from the native
 - Live countdowns with the absolute deadline in a tooltip; date-only goals keep their end-of-day deadline.
 - Matrix icons and custom labels also appear on the home list without changing goal order.
 - Hover is separate from click and keyboard selection.
-- Consistent panel dimensions, three surfaces, six presets, native custom color / HEX, and optional subtle motion.
+- Consistent panel dimensions, three clean surfaces, six presets, a mouse-driven color field with optional HEX, and system type with clear hierarchy. Matrix metadata stays neutral in the list.
+- A compact completion receipt disappears after 2.2 seconds. Its brief local pulse is adapted from MIT-licensed [Pow](https://github.com/EmergeTools/Pow); attribution ships with the app.
 - Native transparency and macOS 26 Liquid Glass controls, with material fallbacks on earlier systems.
 - Optional Apple Reminders sync. Subtasks stay local and are included in JSON backups; they are not native Apple sub-reminders.
 

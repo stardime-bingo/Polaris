@@ -250,6 +250,12 @@ enum L10n {
     static let themeNight = s("theme.night", "Night")
     static let themeCustom = s("theme.custom", "Custom")
 
+    static let appearanceAccentCustom = s("appearance.accent.custom", "自定义颜色")
+    static let appearanceAccentReset = s("appearance.accent.reset", "恢复默认主题色")
+    static let appearanceAccentHex = s("appearance.accent.hex", "主题色 HEX")
+    static let appearanceAccentInvalid = s("appearance.accent.invalid", "请输入 3 或 6 位 HEX 颜色")
+    static let appearanceAccentContrast = s("appearance.accent.contrast", "已保留原色；文字与细线会按底色调整明暗，保证清晰。")
+
     // MARK: - Menu Bar & Notifications
     static func menuOverdue(_ n: Int) -> String {
         String(format: s("menu.overdue", "⚠️ %d Overdue"), n)
@@ -272,6 +278,28 @@ enum L10n {
     }
 
     // MARK: - Due Date Formatting
+    static func countdown(_ state: DueDateFormatter.CountdownState) -> String {
+        switch state {
+        case .completed: s("countdown.completed", "已达成")
+        case .noDeadline: s("countdown.noDeadline", "未设截止日期")
+        case .remainingDays(let days):
+            String(format: s("countdown.remainingDays", "还剩 %d 天"), days)
+        case .remainingDaysHours(let days, let hours):
+            String(format: s("countdown.remainingDaysHours", "还剩 %d 天 %d 小时"), days, hours)
+        case .remainingHours(let hours):
+            String(format: s("countdown.remainingHours", "还剩 %d 小时"), hours)
+        case .remainingLessThanHour: s("countdown.remainingLessThanHour", "还剩不足 1 小时")
+        case .dueNow: s("countdown.dueNow", "已到期")
+        case .overdueDays(let days):
+            String(format: s("countdown.overdueDays", "已逾期 %d 天"), days)
+        case .overdueHours(let hours):
+            String(format: s("countdown.overdueHours", "已逾期 %d 小时"), hours)
+        case .overdueLessThanHour: s("countdown.overdueLessThanHour", "逾期不足 1 小时")
+        }
+    }
+    static func dateOnlyDeadline(_ date: String) -> String {
+        String(format: s("countdown.dateOnlyDeadline", "%@（当天结束时截止）"), date)
+    }
     static func todayAt(_ time: String) -> String {
         String(format: s("due.today", "Today %@"), time)
     }

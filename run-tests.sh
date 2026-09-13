@@ -23,6 +23,7 @@ swiftc \
     "$SRC/Models/Quadrant.swift" \
     "$SRC/Models/SortMode.swift" \
     "$SRC/Models/AppTheme.swift" \
+    "$SRC/Models/PolarisAppearance.swift" \
     "$SRC/Models/HotkeyMapping.swift" \
     "$SRC/Models/ColorPalette.swift" \
     "$SRC/Models/IconPalette.swift" \
@@ -38,6 +39,7 @@ swiftc \
     "$SRC/Services/GoalDateParser.swift" \
     "$SRC/Services/GoalImportPlan.swift" \
     "$SRC/Services/DueDateFormatter.swift" \
+    "$SCRIPT_DIR/tests/AppearanceTests.swift" \
     "$SCRIPT_DIR/tests/main.swift"
 
 echo "🏃 Running tests..."

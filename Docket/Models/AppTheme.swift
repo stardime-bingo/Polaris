@@ -96,9 +96,11 @@ enum AppTheme: Int, CaseIterable, Identifiable {
 
 // MARK: - ThemeManager
 
-/// Resolves theme values accounting for the custom theme's user-defined colors.
+/// Compatibility entry points prefer the shared Polaris preferences. Older data
+/// can still resolve before migration; its keys remain available for downgrades.
 struct ThemeManager {
-    static func resolvedBackground(themeRaw: Int, customHue: Double, customSat: Double) -> Color {
+    static func resolvedBackground(themeRaw: Int, customHue: Double, customSat: Double, defaults: UserDefaults = .standard) -> Color {
+        if let palette = PolarisAppearancePreferences.palette(in: defaults) { return palette.surface }
         let theme = AppTheme(rawValue: themeRaw) ?? .white
         let systemDark = AppTheme.systemIsDark
         if theme == .custom {
@@ -110,7 +112,8 @@ struct ThemeManager {
         return theme.background
     }
 
-    static func resolvedCardBackground(themeRaw: Int) -> Color {
+    static func resolvedCardBackground(themeRaw: Int, defaults: UserDefaults = .standard) -> Color {
+        if let palette = PolarisAppearancePreferences.palette(in: defaults) { return palette.raised }
         let theme = AppTheme(rawValue: themeRaw) ?? .white
         if theme == .custom {
             return AppTheme.systemIsDark ? Color(red: 0.16, green: 0.16, blue: 0.18) : .white.opacity(0.65)
@@ -118,11 +121,13 @@ struct ThemeManager {
         return theme.cardBackground
     }
 
-    static func resolvedIsDark(themeRaw: Int) -> Bool {
-        (AppTheme(rawValue: themeRaw) ?? .white).isDark
+    static func resolvedIsDark(themeRaw: Int, defaults: UserDefaults = .standard) -> Bool {
+        if let palette = PolarisAppearancePreferences.palette(in: defaults) { return palette.isDark }
+        return (AppTheme(rawValue: themeRaw) ?? .white).isDark
     }
 
-    static func resolvedAccent(themeRaw: Int, customHue: Double) -> Color {
+    static func resolvedAccent(themeRaw: Int, customHue: Double, defaults: UserDefaults = .standard) -> Color {
+        if let palette = PolarisAppearancePreferences.palette(in: defaults) { return palette.accentInk }
         let theme = AppTheme(rawValue: themeRaw) ?? .white
         if theme == .custom {
             return Color(hue: customHue, saturation: 0.7, brightness: 0.65)

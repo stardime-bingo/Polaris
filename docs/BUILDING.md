@@ -36,7 +36,7 @@ POLARIS_BUILD_DIR="$PWD/build/custom" ./build.sh
 
 普通预览使用 `com.bingowu.polaris.preview`、`build/preview/` 与 `.local/preview-data/`。演示使用 `com.bingowu.polaris.demo.preview`、`build/demo/` 与 `.local/demo-data/`；首次运行创建虚构目标，后续运行保留演示中的编辑。
 
-两者均使用独立偏好设置，禁用正式提醒同步、通知调度、登录项修改及系统全局快捷键。`--verify` 只证明进程启动，不证明界面或交互正确。源码、资源与工具链未改变时，脚本复用签名有效的预览构建。
+两者均使用独立偏好设置，禁用正式提醒同步、通知调度、登录项修改及系统全局快捷键。预览启动后自动打开面板，切到开发工具时保持可见，可用 Esc 或菜单栏图标收起。`--verify` 只证明进程启动，不证明界面或交互正确。源码、资源与工具链未改变时，脚本复用签名有效的预览构建。
 
 单独生成新的示例数据：
 

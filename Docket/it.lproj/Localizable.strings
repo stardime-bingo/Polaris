@@ -232,3 +232,23 @@
 "due.today" = "Oggi %@";
 "due.tomorrow" = "Domani %@";
 "due.yesterday" = "Ieri %@";
+
+// Countdown and absolute deadlines
+"countdown.completed" = "Completato";
+"countdown.noDeadline" = "Nessuna scadenza";
+"countdown.remainingDays" = "Restano %d giorni";
+"countdown.remainingDaysHours" = "Restano %d giorni e %d h";
+"countdown.remainingHours" = "Tempo rimasto: %d h";
+"countdown.remainingLessThanHour" = "Meno di 1 h alla scadenza";
+"countdown.dueNow" = "Scaduto ora";
+"countdown.overdueDays" = "Ritardo: %d g";
+"countdown.overdueHours" = "Ritardo: %d h";
+"countdown.overdueLessThanHour" = "Meno di 1 h di ritardo";
+"countdown.dateOnlyDeadline" = "%@ (scadenza a fine giornata)";
+
+// Custom accent settings
+"appearance.accent.custom" = "Colore personalizzato";
+"appearance.accent.reset" = "Ripristina colore";
+"appearance.accent.hex" = "HEX colore";
+"appearance.accent.invalid" = "Inserisci un colore HEX di 3 o 6 cifre";
+"appearance.accent.contrast" = "Colore originale conservato; testo e linee si adattano per restare leggibili.";

@@ -53,8 +53,9 @@ private struct GoalControlSurface: View {
                 if primary {
                     RoundedRectangle(cornerRadius: 5).fill(palette.action)
                         .overlay(RoundedRectangle(cornerRadius: 5)
-                            .fill(palette.accentStyle.values.text == "FFFFFF" ? Color.black : Color.white)
-                            .opacity(configuration.isPressed ? 0.14 : hovered ? 0.06 : 0))
+                            .fill(palette.actionInteractionOverlay)
+                            .opacity(enabled && configuration.isPressed ? 0.14 : enabled && hovered ? 0.06 : 0))
+                        .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(palette.ink.opacity(0.18), lineWidth: 0.5))
                         .padding(.vertical, 3)
                 } else {
                     RoundedRectangle(cornerRadius: 5).fill(enabled && configuration.isPressed ? palette.pressed : enabled && hovered ? palette.hover : .clear)

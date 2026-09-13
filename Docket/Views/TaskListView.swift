@@ -88,6 +88,10 @@ struct TaskListView: View {
         .overlay { ConfettiOverlay(trigger: celebrationTrigger, enabled: showConfetti && motion) }
         .onChange(of: showUndo) { _, value in presentation.canUndoCompletion = value }
         .onAppear { ensureSelection(); focusGeneration += 1 }
+        .onChange(of: selectedID) { _, id in
+            AppDelegate.shared?.recordVerificationEvent("list.selection.changed", fields: ["selectedGoalID": id?.uuidString ?? ""])
+            AppDelegate.shared?.writeRuntimeState()
+        }
         .onChange(of: items.map(\.id)) { _, _ in ensureSelection() }
         .onReceive(NotificationCenter.default.publisher(for: .popoverDidOpen)) { _ in focusGeneration += 1; ensureSelection() }
         .onReceive(NotificationCenter.default.publisher(for: .polarisSelectGoal)) { note in
@@ -123,7 +127,6 @@ struct TaskListView: View {
             .id(item.id)
             .onTapGesture(count: 2) { selectedID = item.id; editSelected() }
             .onTapGesture { selectedID = item.id }
-            .onHover { if $0 { selectedID = item.id } }
             .contextMenu { rowActions(item) }
             .accessibilityActions {
                 Button("编辑目标") { selectedID = item.id; editSelected() }

@@ -20,7 +20,10 @@ The hero is AI-generated brand artwork. Product screenshots come from the native
 - A pinned goal in the menu bar and a configurable global shortcut, defaulting to `Option–Space`.
 - Inline subtasks, editable descriptions, goal periods, natural dates, reminders and recurring goals.
 - Multiple goal lists, colored labels, a customizable priority matrix, completed history and JSON import/export.
-- Consistent panel dimensions, three surfaces, six accents and optional subtle motion.
+- Live countdowns with the absolute deadline in a tooltip; date-only goals keep their end-of-day deadline.
+- Matrix icons and custom labels also appear on the home list without changing goal order.
+- Hover is separate from click and keyboard selection.
+- Consistent panel dimensions, three surfaces, six presets, native custom color / HEX, and optional subtle motion.
 - Native transparency and macOS 26 Liquid Glass controls, with material fallbacks on earlier systems.
 - Optional Apple Reminders sync. Subtasks stay local and are included in JSON backups; they are not native Apple sub-reminders.
 

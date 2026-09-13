@@ -1,0 +1,104 @@
+import Foundation
+import SwiftUI
+
+func runAppearanceTests() {
+    // Known sRGB/WCAG anchors, independent of any palette's chosen presets.
+    expectEqual(PolarisRGB(hex: " #aBc ")?.hex, "AABBCC", "short HEX canonicalizes without alpha")
+    expectEqual(PolarisRGB(hex: "00ff7F")?.hex, "00FF7F", "six-digit HEX preserves channel values")
+    for invalid in ["", "##fff", "0xFFFFFF", "ffff", "FFFFFFFF", "12GG00", "１２３", "AB CD EF"] {
+        expect(PolarisRGB(hex: invalid) == nil, "invalid HEX rejected: \(invalid)")
+    }
+    expect(abs(PolarisRGB.white.contrast(with: .black) - 21) < 0.000001, "black/white contrast is 21:1")
+    expect(abs(PolarisRGB(hex: "FF0000")!.luminance - 0.2126) < 0.000001, "sRGB red luminance is 0.2126")
+    expect(abs(PolarisRGB(hex: "808080")!.luminance - 0.2158605) < 0.000001, "sRGB midpoint uses gamma decoding")
+    expectEqual(PolarisRGB.white.readableLabel, .black, "white fill uses black text")
+    expectEqual(PolarisRGB.black.readableLabel, .white, "black fill uses white text")
+    expectEqual(PolarisRGB.black.readable(on: [.white]), .black, "already-readable color is not recolored")
+
+    // Sweep channel extremes and midtones across every real content surface.
+    // Stored/fill color must stay exact; text and fine line contrast must pass.
+    for surface in PolarisSurface.allCases {
+        for red in stride(from: 0, through: 255, by: 51) {
+            for green in stride(from: 0, through: 255, by: 51) {
+                for blue in stride(from: 0, through: 255, by: 51) {
+                    let hex = String(format: "%02X%02X%02X", red, green, blue)
+                    let palette = PolarisPalette(surfaceStyle: surface, customAccentHex: hex)
+                    expectEqual(palette.accentRGB.hex, hex, "custom original is retained on \(surface.rawValue)")
+                    expect(palette.accentRGB.contrast(with: palette.accentRGB.readableLabel) >= 4.5,
+                           "button label stays readable for \(hex)")
+                    for background in [palette.surfaceRGB, palette.raisedRGB, palette.selectionRGB, palette.hoverRGB, palette.pressedRGB] {
+                        expect(palette.accentInkRGB.contrast(with: background) >= 4.5 - 0.000001,
+                               "accent text meets 4.5:1 on \(surface.rawValue) for \(hex)")
+                    }
+                }
+            }
+        }
+        for preset in PolarisAccent.allCases {
+            let palette = PolarisPalette(surfaceStyle: surface, accentStyle: preset)
+            expectEqual(palette.accentRGB.hex, preset.hex, "six preset fills keep their exact color")
+        }
+    }
+    let corrected = PolarisRGB.white.readable(on: [.white])
+    expect(abs(corrected.contrast(with: .white) - 4.5) < 0.000001, "correction stops at necessary contrast, not an arbitrary darker color")
+    let badCustom = PolarisPalette(accentStyle: .rose, customAccentHex: "invalid")
+    expectEqual(badCustom.accentRGB.hex, PolarisAccent.rose.hex, "corrupt custom color safely falls back to selected preset")
+
+    let suite = "com.bingowu.polaris.tests.appearance.\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    defer { defaults.removePersistentDomain(forName: suite) }
+    func reset() { defaults.removePersistentDomain(forName: suite) }
+
+    PolarisAppearancePreferences.migrateIfNeeded(in: defaults)
+    expectEqual(PolarisAppearancePreferences.palette(in: defaults)?.surfaceStyle, .graphite, "new install preserves graphite default")
+    expectEqual(PolarisAppearancePreferences.palette(in: defaults)?.accentStyle, .klein, "new install preserves blue default")
+    expect(defaults.object(forKey: "appTheme") == nil, "migration does not manufacture old theme preferences")
+
+    reset()
+    defaults.set(AppTheme.custom.rawValue, forKey: "appTheme")
+    defaults.set(0.5, forKey: "customHue")
+    defaults.set(0.23, forKey: "customSat")
+    defaults.set(false, forKey: "polarisGlassEnabled")
+    defaults.set("unrelated-test-binding", forKey: "remindersListID")
+    PolarisAppearancePreferences.migrateIfNeeded(in: defaults)
+    expectEqual(defaults.string(forKey: "polarisAccent"), "custom", "legacy custom becomes active custom accent")
+    expectEqual(defaults.string(forKey: "polarisCustomAccentHex"), "32A6A6", "legacy custom recovers the actual old hue-based accent")
+    expectEqual(defaults.double(forKey: "customHue"), 0.5, "legacy hue remains intact")
+    expectEqual(defaults.double(forKey: "customSat"), 0.23, "legacy background intensity remains intact")
+    expectEqual(defaults.integer(forKey: "appTheme"), AppTheme.custom.rawValue, "legacy theme remains intact")
+    expect(!defaults.bool(forKey: "polarisGlassEnabled"), "migration keeps glass preference")
+    expectEqual(defaults.string(forKey: "remindersListID"), "unrelated-test-binding", "migration leaves sync binding untouched")
+
+    expect(PolarisAppearancePreferences.setCustom("#FEFCDC", in: defaults), "custom choice accepted")
+    defaults.synchronize()
+    let reopened = UserDefaults(suiteName: suite)!
+    expectEqual(PolarisAppearancePreferences.palette(in: reopened)?.accentRGB.hex, "FEFCDC", "fresh preference reader restores exact custom color")
+    expect(!PolarisAppearancePreferences.setCustom("#not-a-color", in: defaults), "invalid custom choice rejected")
+    expectEqual(PolarisAppearancePreferences.palette(in: defaults)?.accentRGB.hex, "FEFCDC", "invalid input does not overwrite valid selection")
+    let palette = PolarisAppearancePreferences.palette(in: defaults)!
+    expectEqual(ThemeManager.resolvedAccent(themeRaw: AppTheme.midnight.rawValue, customHue: 0.9, defaults: defaults).toHex(), palette.accentInk.toHex(), "legacy accent entry point uses active Polaris palette")
+    expectEqual(ThemeManager.resolvedBackground(themeRaw: AppTheme.midnight.rawValue, customHue: 0.9, customSat: 1, defaults: defaults).toHex(), palette.surface.toHex(), "legacy background entry point uses active Polaris surface")
+    expectEqual(ThemeManager.resolvedIsDark(themeRaw: AppTheme.midnight.rawValue, defaults: defaults), false, "legacy darkness lookup follows chosen light surface")
+    PolarisAppearancePreferences.restoreDefaultAccent(in: defaults)
+    expectEqual(PolarisAppearancePreferences.palette(in: defaults)?.accentRGB.hex, "002FA7", "restore resets only theme accent")
+    expectEqual(defaults.string(forKey: "polarisSurface"), "mist", "restore retains chosen surface")
+    expectEqual(defaults.double(forKey: "customSat"), 0.23, "restore retains legacy preference backup")
+    expectEqual(defaults.string(forKey: "remindersListID"), "unrelated-test-binding", "restore leaves sync binding untouched")
+
+    reset()
+    defaults.set(AppTheme.custom.rawValue, forKey: "appTheme")
+    defaults.set(0.8, forKey: "customHue")
+    defaults.set("warm", forKey: "polarisSurface")
+    defaults.set("lime", forKey: "polarisAccent")
+    PolarisAppearancePreferences.migrateIfNeeded(in: defaults)
+    expectEqual(defaults.string(forKey: "polarisAccent"), "lime", "explicit Polaris preset wins over dormant legacy theme")
+    expectEqual(defaults.string(forKey: "polarisSurface"), "warm", "explicit Polaris surface wins over legacy background")
+    defaults.set("rose", forKey: "polarisAccent")
+    PolarisAppearancePreferences.migrateIfNeeded(in: defaults)
+    expectEqual(defaults.string(forKey: "polarisAccent"), "rose", "repeated migration never replays legacy values")
+
+    reset()
+    defaults.set(AppTheme.midnight.rawValue, forKey: "appTheme")
+    PolarisAppearancePreferences.migrateIfNeeded(in: defaults)
+    expectEqual(defaults.string(forKey: "polarisSurface"), "graphite", "legacy midnight keeps a dark surface")
+    expectEqual(defaults.string(forKey: "polarisAccent"), "custom", "legacy non-Polaris preset is retained as a custom color")
+}

@@ -1,7 +1,8 @@
 import SwiftUI
 import AppKit
 
-/// One native material behind the entire panel; content stays on a readable tint.
+/// Keep the chosen surface stable over native material. A small amount of the
+/// material remains visible; controls carry the stronger glass treatment.
 struct PolarisPanelBackground: View {
     let palette: PolarisPalette
     @AppStorage("polarisGlassEnabled") private var glass = true
@@ -10,7 +11,7 @@ struct PolarisPanelBackground: View {
         ZStack {
             if glass && !reduceTransparency {
                 PolarisVisualEffect(isDark: palette.isDark)
-                palette.surface.opacity(palette.isDark ? 0.62 : 0.55)
+                palette.surface.opacity(0.9)
             } else { palette.surface }
         }.ignoresSafeArea()
     }

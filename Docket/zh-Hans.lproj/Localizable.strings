@@ -196,3 +196,23 @@
 "due.today" = "今天 %@";
 "due.tomorrow" = "明天 %@";
 "due.yesterday" = "昨天 %@";
+
+// Countdown and absolute deadlines
+"countdown.completed" = "已达成";
+"countdown.noDeadline" = "未设截止日期";
+"countdown.remainingDays" = "还剩 %d 天";
+"countdown.remainingDaysHours" = "还剩 %d 天 %d 小时";
+"countdown.remainingHours" = "还剩 %d 小时";
+"countdown.remainingLessThanHour" = "还剩不足 1 小时";
+"countdown.dueNow" = "已到期";
+"countdown.overdueDays" = "已逾期 %d 天";
+"countdown.overdueHours" = "已逾期 %d 小时";
+"countdown.overdueLessThanHour" = "逾期不足 1 小时";
+"countdown.dateOnlyDeadline" = "%@（当天结束时截止）";
+
+// Custom accent settings
+"appearance.accent.custom" = "自定义颜色";
+"appearance.accent.reset" = "恢复默认主题色";
+"appearance.accent.hex" = "主题色 HEX";
+"appearance.accent.invalid" = "请输入 3 或 6 位 HEX 颜色";
+"appearance.accent.contrast" = "已保留原色；文字与细线会按底色调整明暗，保证清晰。";

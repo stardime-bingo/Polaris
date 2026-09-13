@@ -150,6 +150,97 @@ func testDueDateFormatter() {
     expect(DueDateFormatter.format(tomorrow).contains("明天"), "tomorrow is labeled Tomorrow")
 }
 
+func testCountdownBoundariesAndRefresh() {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(identifier: "Asia/Shanghai")!
+    let now = calendar.date(from: DateComponents(year: 2026, month: 9, day: 8, hour: 12))!
+    let boundaries: [(TimeInterval, DueDateFormatter.CountdownState, String)] = [
+        (8 * 86_400 + 3_600, .remainingDays(8), "还剩 8 天"),
+        (7 * 86_400, .remainingDays(7), "还剩 7 天"),
+        (7 * 86_400 - 1, .remainingDaysHours(6, 23), "还剩 6 天 23 小时"),
+        (6 * 86_400 + 12 * 3_600, .remainingDaysHours(6, 12), "还剩 6 天 12 小时"),
+        (48 * 3_600 + 1, .remainingDaysHours(2, 0), "还剩 2 天 0 小时"),
+        (48 * 3_600, .remainingHours(48), "还剩 48 小时"),
+        (48 * 3_600 - 1, .remainingHours(47), "还剩 47 小时"),
+        (3_601, .remainingHours(1), "还剩 1 小时"),
+        (3_600, .remainingHours(1), "还剩 1 小时"),
+        (3_599, .remainingLessThanHour, "还剩不足 1 小时"),
+        (1, .remainingLessThanHour, "还剩不足 1 小时"),
+        (0, .dueNow, "已到期"),
+        (-1, .overdueLessThanHour, "逾期不足 1 小时"),
+        (-3_599, .overdueLessThanHour, "逾期不足 1 小时"),
+        (-3_600, .overdueHours(1), "已逾期 1 小时"),
+        (-86_400, .overdueDays(1), "已逾期 1 天")
+    ]
+    for (seconds, state, label) in boundaries {
+        let due = now.addingTimeInterval(seconds)
+        expectEqual(DueDateFormatter.countdownState(due, hasTime: true, now: now, calendar: calendar), state,
+                    "countdown state at exact \(seconds)-second boundary")
+        expectEqual(DueDateFormatter.countdown(due, hasTime: true, now: now, calendar: calendar), label,
+                    "countdown text at exact \(seconds)-second boundary")
+    }
+    expectEqual(DueDateFormatter.countdown(nil, now: now), "未设截止日期", "undated goal is explicit")
+    expectEqual(DueDateFormatter.countdown(now.addingTimeInterval(-86_400), hasTime: true, isCompleted: true, now: now),
+                "已达成", "completed goal cannot display overdue")
+    expectEqual(DueDateFormatter.countdown(nil, isCompleted: true, now: now), "已达成", "completed state precedes missing deadline")
+
+    let due = now.addingTimeInterval(48 * 3_600 + 1)
+    expectEqual(DueDateFormatter.countdown(due, hasTime: true, now: now, calendar: calendar), "还剩 2 天 0 小时", "initial display before precision change")
+    expectEqual(DueDateFormatter.countdown(due, hasTime: true, now: now.addingTimeInterval(1), calendar: calendar), "还剩 48 小时", "injected clock refresh crosses precision boundary without editing goal")
+    expectEqual(DueDateFormatter.countdown(due, hasTime: true, now: due, calendar: calendar), "已到期", "refresh reaches exact deadline")
+    expectEqual(DueDateFormatter.countdown(due, hasTime: true, now: due.addingTimeInterval(1), calendar: calendar), "逾期不足 1 小时", "refresh enters overdue state")
+}
+
+func testCountdownCalendarSemantics() {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(identifier: "Asia/Shanghai")!
+    func date(_ year: Int, _ month: Int, _ day: Int, _ hour: Int = 0, _ minute: Int = 0, _ second: Int = 0) -> Date {
+        calendar.date(from: DateComponents(year: year, month: month, day: day, hour: hour, minute: minute, second: second))!
+    }
+    let due = date(2026, 9, 8, 2)
+    expectEqual(DueDateFormatter.effectiveDeadline(due, hasTime: false, calendar: calendar), date(2026, 9, 9), "inherited date-only clock does not shorten its calendar day")
+    expectEqual(DueDateFormatter.countdown(due, now: date(2026, 9, 8, 12), calendar: calendar), "还剩 12 小时", "date-only goal counts down to local end of day")
+    expectEqual(DueDateFormatter.countdown(due, now: date(2026, 9, 8, 23, 59, 59), calendar: calendar), "还剩不足 1 小时", "date-only goal remains available through its last second")
+    expectEqual(DueDateFormatter.countdown(due, now: date(2026, 9, 9), calendar: calendar), "已到期", "midnight is the date-only deadline boundary")
+    expectEqual(DueDateFormatter.countdown(due, now: date(2026, 9, 9, 0, 0, 1), calendar: calendar), "逾期不足 1 小时", "crossing local midnight expires date-only goal")
+    expectEqual(DueDateFormatter.absolute(due, calendar: calendar), "2026年9月8日（当天结束时截止）", "absolute tooltip exposes year and date-only precision")
+    expectEqual(DueDateFormatter.absolute(due, hasTime: true, calendar: calendar), "2026年9月8日 02:00", "absolute tooltip retains explicit deadline time")
+
+    calendar.timeZone = TimeZone(identifier: "America/Los_Angeles")!
+    let springDay = date(2026, 3, 8)
+    let autumnDay = date(2026, 11, 1)
+    expectEqual(DueDateFormatter.countdown(springDay, now: springDay, calendar: calendar), "还剩 23 小时", "date-only spring-forward day has 23 elapsed hours")
+    expectEqual(DueDateFormatter.countdown(autumnDay, now: autumnDay, calendar: calendar), "还剩 25 小时", "date-only fall-back day has 25 elapsed hours")
+    expectEqual(DueDateFormatter.countdown(date(2026, 3, 8, 3), hasTime: true, now: date(2026, 3, 8, 1), calendar: calendar), "还剩 1 小时", "explicit times count real hours across skipped DST hour")
+    expectEqual(DueDateFormatter.countdown(date(2026, 11, 1, 3), hasTime: true, now: date(2026, 11, 1), calendar: calendar), "还剩 4 小时", "explicit times count repeated DST hour")
+    expectEqual(DueDateFormatter.countdown(date(2026, 3, 9), hasTime: true, now: date(2026, 3, 2), calendar: calendar), "还剩 6 天 23 小时", "seven local dates over spring DST are less than seven elapsed days")
+    expectEqual(DueDateFormatter.countdown(date(2026, 11, 2), hasTime: true, now: date(2026, 10, 26), calendar: calendar), "还剩 7 天", "seven local dates over autumn DST include an extra elapsed hour")
+
+    let iso = ISO8601DateFormatter()
+    let stored = iso.date(from: "2026-09-09T00:00:00Z")!
+    let current = iso.date(from: "2026-09-08T22:00:00Z")!
+    var utc = calendar; utc.timeZone = TimeZone(secondsFromGMT: 0)!
+    expectEqual(DueDateFormatter.countdown(stored, now: current, calendar: utc), "还剩 26 小时", "date-only deadline follows injected UTC day")
+    expectEqual(DueDateFormatter.countdown(stored, now: current, calendar: calendar), "还剩 9 小时", "timezone change recomputes date-only local day without cached calendar")
+    expectEqual(DueDateFormatter.countdown(stored, hasTime: true, now: current, calendar: calendar), "还剩 2 小时", "timed countdown retains the same instant after timezone change")
+    expectEqual(DueDateFormatter.countdown(stored, hasTime: true, now: current, calendar: utc), "还剩 2 小时", "timed countdown is independent of display timezone")
+
+    var goal = TodoItem(title: "倒计时只读测试", dueDate: due)
+    goal.reminderDueTimeZoneID = "Asia/Shanghai"
+    goal.reminderOffset = .oneHour
+    do {
+        let encoder = JSONEncoder(); encoder.outputFormatting = .sortedKeys
+        let before = try encoder.encode(goal)
+        _ = DueDateFormatter.countdown(goal.dueDate, hasTime: goal.hasDueTime, now: current, calendar: calendar)
+        _ = DueDateFormatter.absolute(goal.dueDate!, hasTime: goal.hasDueTime, calendar: calendar)
+        let restored = try JSONDecoder().decode(TodoItem.self, from: before)
+        expectEqual(try encoder.encode(goal), before, "formatting preserves exact serialized deadline and reminder metadata")
+        expectEqual(restored.dueDate, due, "restart retains date-only inherited timestamp")
+        expectEqual(DueDateFormatter.countdown(restored.dueDate, hasTime: restored.hasDueTime, now: current, calendar: calendar),
+                    DueDateFormatter.countdown(goal.dueDate, hasTime: goal.hasDueTime, now: current, calendar: calendar), "restart recomputes same countdown for same clock and timezone")
+    } catch { expect(false, "countdown persistence fixture: \(error)") }
+}
+
 // MARK: - Color(hex:)
 
 func rgba(_ c: Color) -> (r: Double, g: Double, b: Double, a: Double) {
@@ -515,10 +606,10 @@ func testGoalDeadlineEdgeCases() {
     let longTerm = GoalScheduleRules.changingPeriod(goal, to: .longTerm, now: now, calendar: calendar)
     expect(longTerm.dueDate == nil && !longTerm.hasDueTime, "long-term reset removes deadline and time precision together")
     expectEqual(DueDateFormatter.remaining(now.addingTimeInterval(5400), hasTime: true, now: now, calendar: calendar), "还剩 1 小时", "precise deadline shows remaining hours")
-    expectEqual(DueDateFormatter.remaining(now.addingTimeInterval(-600), hasTime: true, now: now, calendar: calendar), "已过 10 分钟", "same-day expired time must not read today due")
-    expectEqual(DueDateFormatter.remaining(now.addingTimeInterval(30), hasTime: true, now: now, calendar: calendar), "即将截止", "less than a minute does not show zero minutes")
-    expectEqual(DueDateFormatter.remaining(now.addingTimeInterval(-30), hasTime: true, now: now, calendar: calendar), "刚刚超时", "precise expiration transition")
-    expectEqual(DueDateFormatter.remaining(now.addingTimeInterval(-600), now: now, calendar: calendar), "今天截止", "date-only deadlines retain whole-day semantics")
+    expectEqual(DueDateFormatter.remaining(now.addingTimeInterval(-600), hasTime: true, now: now, calendar: calendar), "逾期不足 1 小时", "same-day expired time must not read today due")
+    expectEqual(DueDateFormatter.remaining(now.addingTimeInterval(30), hasTime: true, now: now, calendar: calendar), "还剩不足 1 小时", "less than an hour does not show zero hours")
+    expectEqual(DueDateFormatter.remaining(now.addingTimeInterval(-30), hasTime: true, now: now, calendar: calendar), "逾期不足 1 小时", "precise expiration transition")
+    expectEqual(DueDateFormatter.remaining(now.addingTimeInterval(-600), now: now, calendar: calendar), "还剩 12 小时", "date-only deadlines retain whole-day semantics")
 }
 
 
@@ -701,6 +792,8 @@ testGoalDeadlineEdgeCases()
 testDateParser()
 testRecurrence()
 testDueDateFormatter()
+testCountdownBoundariesAndRefresh()
+testCountdownCalendarSemantics()
 testColorHex()
 testHotkeyMapping()
 testColorAdaptation()
@@ -710,6 +803,7 @@ testIconPalette()
 testMatrixLayout()
 testTodoItemCodable()
 testDocketExport()
+runAppearanceTests()
 
 print("\n\(passed) passed, \(failed) failed")
 exit(failed == 0 ? 0 : 1)

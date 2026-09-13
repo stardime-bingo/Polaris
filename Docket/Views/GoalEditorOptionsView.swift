@@ -10,7 +10,7 @@ struct GoalTimingOptionsView: View {
         VStack(spacing: 6) {
             GoalScheduleView(item: $item, isActiveEditor: isActiveEditor)
             HStack(spacing: 10) {
-                Toggle("指定时间", isOn: $item.hasDueTime).toggleStyle(.checkbox)
+                Toggle("指定时间", isOn: $item.hasDueTime).toggleStyle(.checkbox).tint(palette.action)
                     .onChange(of: item.hasDueTime) { _, enabled in
                         if enabled, let date = item.dueDate {
                             item.dueDate = Calendar.current.date(bySettingHour: 9, minute: 0, second: 0, of: date)

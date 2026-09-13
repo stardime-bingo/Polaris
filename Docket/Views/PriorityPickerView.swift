@@ -9,7 +9,7 @@ struct PriorityPickerView: View {
             Spacer(minLength: 0)
             Picker("优先级", selection: $priority) {
                 ForEach(Priority.allCases) { Text($0.displayName).tag($0) }
-            }.labelsHidden().pickerStyle(.segmented).controlSize(.small)
+            }.labelsHidden().pickerStyle(.segmented).controlSize(.small).tint(palette.action)
         }.frame(minHeight: 36)
     }
 }

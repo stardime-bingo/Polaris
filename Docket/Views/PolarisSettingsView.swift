@@ -196,15 +196,16 @@ private struct PolarisColorPicker: View {
     private var colorField: some View {
         GeometryReader { geometry in
             ZStack(alignment: .topLeading) {
-                LinearGradient(colors: [.white, Color(hue: hue, saturation: 1, brightness: 1)], startPoint: .leading, endPoint: .trailing)
-                LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom)
+                ZStack {
+                    LinearGradient(colors: [.white, Color(hue: hue, saturation: 1, brightness: 1)], startPoint: .leading, endPoint: .trailing)
+                    LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom)
+                }.clipShape(RoundedRectangle(cornerRadius: 6))
                 Circle().strokeBorder(.black.opacity(0.55), lineWidth: 3)
                     .overlay(Circle().strokeBorder(.white, lineWidth: 1.5))
                     .frame(width: 12, height: 12)
                     .position(x: saturation * geometry.size.width, y: (1 - brightness) * geometry.size.height)
                     .allowsHitTesting(false)
             }
-            .clipShape(RoundedRectangle(cornerRadius: 6))
             .contentShape(Rectangle())
             .gesture(DragGesture(minimumDistance: 0).onChanged { value in
                 saturation = Double(max(0, min(1, value.location.x / geometry.size.width)))

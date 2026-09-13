@@ -146,15 +146,36 @@ struct PolarisPalette {
     var hover: Color { hoverRGB.color }
     var pressed: Color { pressedRGB.color }
     var accentRGB: PolarisRGB { customAccentHex.flatMap({ PolarisRGB(hex: $0) }) ?? PolarisRGB(hex: accentStyle.hex)! }
-    var accentInkRGB: PolarisRGB { accentRGB.readable(on: [surfaceRGB, raisedRGB, selectionRGB, hoverRGB, pressedRGB]) }
+    // A goal selection is tied to the chosen accent. Settings and other controls
+    // retain their neutral surfaces, so color still identifies a specific state.
+    var goalSelectionRGB: PolarisRGB { surfaceRGB.mixed(with: accentRGB, amount: isDark ? 0.16 : 0.085) }
+    var goalPressedRGB: PolarisRGB { surfaceRGB.mixed(with: accentRGB, amount: isDark ? 0.24 : 0.14) }
+    var accentInkRGB: PolarisRGB { accentRGB.readable(on: [surfaceRGB, raisedRGB, selectionRGB, hoverRGB, pressedRGB, goalSelectionRGB, goalPressedRGB]) }
     var action: Color { accentRGB.color }
     var actionText: Color { accentRGB.readableLabel.color }
     var actionInteractionOverlay: Color { accentRGB.readableLabel == .white ? .black : .white }
     var accentInk: Color { accentInkRGB.color }
     var selection: Color { selectionRGB.color }
     var selectionLine: Color { accentInk }
+    var goalSelection: Color { goalSelectionRGB.color }
+    var goalPressed: Color { goalPressedRGB.color }
+    var completedText: Color { readableColor(hex: isDark ? "969CA7" : "81818A") }
+
+    // Preserve the category's hue (including custom matrix colors), while
+    // limiting saturation and color area to a small annotation beside its title.
+    private func annotationRGB(hex: String) -> PolarisRGB {
+        let color = PolarisRGB(hex: hex) ?? accentRGB
+        let hsb = color.hsb
+        return PolarisRGB(hue: hsb.hue, saturation: min(hsb.saturation, 0.58), brightness: hsb.brightness)
+    }
+    func annotationSurfaceRGB(hex: String) -> PolarisRGB {
+        surfaceRGB.mixed(with: annotationRGB(hex: hex), amount: isDark ? 0.16 : 0.085)
+    }
+    func annotationInkRGB(hex: String) -> PolarisRGB {
+        annotationRGB(hex: hex).readable(on: [annotationSurfaceRGB(hex: hex)])
+    }
     func readableColor(hex: String, minimum: Double = 4.5) -> Color {
-        (PolarisRGB(hex: hex) ?? accentRGB).readable(on: [surfaceRGB, raisedRGB, selectionRGB, hoverRGB, pressedRGB], minimum: minimum).color
+        (PolarisRGB(hex: hex) ?? accentRGB).readable(on: [surfaceRGB, raisedRGB, selectionRGB, hoverRGB, pressedRGB, goalSelectionRGB, goalPressedRGB], minimum: minimum).color
     }
 }
 

@@ -114,39 +114,28 @@ struct TaskRowView: View {
                 else { Circle().strokeBorder(isSelected ? palette.accentInk : palette.muted, lineWidth: 1).frame(width: 10, height: 10) }
             }.frame(width: 24, height: 20).foregroundStyle(featured ? palette.accentInk : palette.muted)
                 .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 4) {
                 Text(item.title).font(PolarisType.title)
                     .foregroundStyle(palette.ink).lineSpacing(3)
                     .fixedSize(horizontal: false, vertical: true)
                 HStack(spacing: 10) {
                     if let quadrant = item.quadrant {
                         HStack(spacing: 4) {
-                            Image(systemName: quadrant.icon).font(.system(size: 10))
+                            Image(systemName: quadrant.icon).font(.system(size: 11))
+                                .foregroundStyle(palette.readableColor(hex: quadrantColor(quadrant), minimum: 3))
+                                .frame(width: 12, height: 17).accessibilityHidden(true)
                             Text(quadrantLabel(quadrant)).lineLimit(1)
-                        }.font(.system(size: 10.5, weight: .medium))
-                            .foregroundStyle(palette.annotationInkRGB(hex: quadrantColor(quadrant)).color)
-                            .padding(.horizontal, 6).padding(.vertical, 2)
-                            .background(palette.annotationSurfaceRGB(hex: quadrantColor(quadrant)).color,
-                                        in: RoundedRectangle(cornerRadius: 4))
+                        }.foregroundStyle(palette.secondary)
                             .help(quadrantLabel(quadrant))
                             .accessibilityElement(children: .combine)
                             .accessibilityLabel("\(L10n.matrix)：\(quadrantLabel(quadrant))")
                     }
                     Spacer(minLength: 0)
-                    if let deadlineColor {
-                        Text(countdown).font(.system(size: 10.5, weight: .medium)).monospacedDigit().fixedSize()
-                            .foregroundStyle(palette.annotationInkRGB(hex: deadlineColor).color)
-                            .padding(.horizontal, 6).padding(.vertical, 2)
-                            .background(palette.annotationSurfaceRGB(hex: deadlineColor).color,
-                                        in: RoundedRectangle(cornerRadius: 4))
-                            .help(deadline).accessibilityLabel("\(countdown)，\(deadline)")
-                    } else {
-                        Text(countdown).monospacedDigit().fixedSize()
-                            .foregroundStyle(palette.secondary)
-                            .help(deadline)
-                            .accessibilityLabel(item.dueDate == nil ? countdown : "\(countdown)，\(deadline)")
-                    }
-                }.font(PolarisType.metadata).frame(minHeight: 20)
+                    Text(countdown).monospacedDigit().fixedSize()
+                        .foregroundStyle(deadlineColor.map { palette.readableColor(hex: $0) } ?? palette.secondary)
+                        .help(deadline)
+                        .accessibilityLabel(item.dueDate == nil ? countdown : "\(countdown)，\(deadline)")
+                }.font(PolarisType.metadata).frame(minHeight: 17)
                 if !item.steps.isEmpty {
                     HStack(spacing: 6) {
                         let completed = item.steps.filter(\.isCompleted).count

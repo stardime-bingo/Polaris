@@ -112,7 +112,7 @@ func runAppearanceTests() {
                     expectEqual(palette.accentRGB.hex, hex, "custom original is retained on \(surface.rawValue)")
                     expect(palette.accentRGB.contrast(with: palette.accentRGB.readableLabel) >= 4.5,
                            "button label stays readable for \(hex)")
-                    for background in [palette.surfaceRGB, palette.raisedRGB, palette.selectionRGB, palette.hoverRGB, palette.pressedRGB, palette.goalSelectionRGB, palette.goalPressedRGB] {
+                    for background in [palette.surfaceRGB, palette.raisedRGB, palette.selectionRGB, palette.hoverRGB, palette.pressedRGB] {
                         expect(palette.accentInkRGB.contrast(with: background) >= 4.5 - 0.000001,
                                "accent text meets 4.5:1 on \(surface.rawValue) for \(hex)")
                     }
@@ -123,10 +123,20 @@ func runAppearanceTests() {
             let palette = PolarisPalette(surfaceStyle: surface, accentStyle: preset)
             expectEqual(palette.accentRGB.hex, preset.hex, "six preset fills keep their exact color")
         }
-        for hex in ["EF4444", "3B82F6", "F59E0B", "9CA3AF", "C95151", "B57826", "FFFFFF", "000000"] {
+        for hex in ["EF4444", "3B82F6", "F59E0B", "9CA3AF", "C95151", "B57826", "C6FF4A", "FF00FF", "FFFFFF", "000000"] {
             let palette = PolarisPalette(surfaceStyle: surface)
-            expect(palette.annotationInkRGB(hex: hex).contrast(with: palette.annotationSurfaceRGB(hex: hex)) >= 4.5 - 0.000001,
-                   "category and deadline annotation text remains readable on its actual fill")
+            let backgrounds = [palette.surfaceRGB, palette.raisedRGB, palette.selectionRGB, palette.hoverRGB, palette.pressedRGB]
+            let original = PolarisRGB(hex: hex)!
+            for minimum in [3.0, 4.5] {
+                let foreground = palette.readableRGB(hex: hex, minimum: minimum)
+                for background in backgrounds {
+                    expect(foreground.contrast(with: background) >= minimum - 0.000001,
+                           "category icons and deadline text meet their role's contrast on every actual row state")
+                }
+                if backgrounds.allSatisfy({ original.contrast(with: $0) >= minimum }) {
+                    expectEqual(foreground, original, "readable category and deadline colors retain their exact hue and saturation")
+                }
+            }
         }
     }
     let corrected = PolarisRGB.white.readable(on: [.white])

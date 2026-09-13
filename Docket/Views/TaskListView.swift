@@ -123,10 +123,9 @@ struct TaskListView: View {
                 withAnimation(motion && !reduceMotion ? .easeInOut(duration: 0.16) : nil) {
                     _ = store.toggleStep(goalID: item.id, stepID: stepID)
                 }
-            })
+            }, onSelect: { selectedID = item.id },
+            onEdit: { selectedID = item.id; editSelected() })
             .id(item.id)
-            .onTapGesture(count: 2) { selectedID = item.id; editSelected() }
-            .onTapGesture { selectedID = item.id }
             .contextMenu { rowActions(item) }
             .accessibilityActions {
                 Button("编辑目标") { selectedID = item.id; editSelected() }

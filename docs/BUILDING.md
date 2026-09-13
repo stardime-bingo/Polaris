@@ -32,6 +32,7 @@ POLARIS_BUILD_DIR="$PWD/build/custom" ./build.sh
 ./script/build_and_run.sh --debug
 ./script/build_and_run.sh --logs
 ./script/build_and_run.sh --verify
+POLARIS_PREVIEW_AVAILABLE_HEIGHT=460 ./script/build_and_run.sh --demo  # 用真实面板检查 408 × 400 pt 布局
 ```
 
 普通预览使用 `com.bingowu.polaris.preview`、`build/preview/` 与 `.local/preview-data/`。演示使用 `com.bingowu.polaris.demo.preview`、`build/demo/` 与 `.local/demo-data/`；首次运行创建虚构目标，后续运行保留演示中的编辑。

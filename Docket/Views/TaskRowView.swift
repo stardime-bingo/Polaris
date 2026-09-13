@@ -66,7 +66,7 @@ struct TaskRowView: View {
                     Text(countdown).monospacedDigit().fixedSize()
                         .foregroundStyle(item.isOverdue(at: now) ? palette.accentInk : palette.secondary)
                         .help(deadline)
-                        .accessibilityLabel("\(countdown)，\(deadline)")
+                        .accessibilityLabel(item.dueDate == nil ? countdown : "\(countdown)，\(deadline)")
                 }.font(.system(size: 11)).frame(minHeight: 18)
                 if !item.steps.isEmpty {
                     Text("\(item.steps.filter(\.isCompleted).count) / \(item.steps.count) 子任务")

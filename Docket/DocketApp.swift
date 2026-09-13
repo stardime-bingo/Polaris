@@ -370,6 +370,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     }
 
     static var preferredPopoverSize: NSSize {
+        if DocketRuntime.isPreview,
+           let index = ProcessInfo.processInfo.arguments.firstIndex(of: "--preview-available-height"),
+           ProcessInfo.processInfo.arguments.indices.contains(index + 1),
+           let height = Double(ProcessInfo.processInfo.arguments[index + 1]), height.isFinite, height > 0 {
+            return GoalBoardRules.panelSize(availableHeight: height)
+        }
         let screen = shared?.statusItem?.button?.window?.screen ?? NSScreen.main
         return GoalBoardRules.panelSize(availableHeight: screen?.visibleFrame.height ?? 800)
     }

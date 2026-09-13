@@ -135,11 +135,14 @@ enum PolarisAppearancePreferences {
                               customAccentHex: storedAccent == customAccent ? defaults.string(forKey: "polarisCustomAccentHex") : nil)
     }
 
-    static func migrateIfNeeded(in defaults: UserDefaults) {
+    static func migrateIfNeeded(in defaults: UserDefaults, systemIsDark: Bool? = nil) {
         guard defaults.integer(forKey: "polarisAppearanceVersion") < 1 else { return }
         let legacyTheme = (defaults.object(forKey: "appTheme") as? NSNumber).flatMap { AppTheme(rawValue: $0.intValue) }
         if defaults.string(forKey: "polarisSurface").flatMap(PolarisSurface.init(rawValue:)) == nil {
-            defaults.set(legacyTheme == nil || legacyTheme == .midnight ? "graphite" : "mist", forKey: "polarisSurface")
+            // Old presets/custom followed system darkness; midnight was always
+            // dark. Only consult that appearance when no Polaris surface exists.
+            let legacyWasDark = legacyTheme == nil || legacyTheme == .midnight || (systemIsDark ?? AppTheme.systemIsDark)
+            defaults.set(legacyWasDark ? "graphite" : "mist", forKey: "polarisSurface")
         }
         if palette(in: defaults) == nil {
             if let legacyTheme {

@@ -48,7 +48,7 @@ func runAppearanceTests() {
     defer { defaults.removePersistentDomain(forName: suite) }
     func reset() { defaults.removePersistentDomain(forName: suite) }
 
-    PolarisAppearancePreferences.migrateIfNeeded(in: defaults)
+    PolarisAppearancePreferences.migrateIfNeeded(in: defaults, systemIsDark: false)
     expectEqual(PolarisAppearancePreferences.palette(in: defaults)?.surfaceStyle, .graphite, "new install preserves graphite default")
     expectEqual(PolarisAppearancePreferences.palette(in: defaults)?.accentStyle, .klein, "new install preserves blue default")
     expect(defaults.object(forKey: "appTheme") == nil, "migration does not manufacture old theme preferences")
@@ -59,7 +59,7 @@ func runAppearanceTests() {
     defaults.set(0.23, forKey: "customSat")
     defaults.set(false, forKey: "polarisGlassEnabled")
     defaults.set("unrelated-test-binding", forKey: "remindersListID")
-    PolarisAppearancePreferences.migrateIfNeeded(in: defaults)
+    PolarisAppearancePreferences.migrateIfNeeded(in: defaults, systemIsDark: false)
     expectEqual(defaults.string(forKey: "polarisAccent"), "custom", "legacy custom becomes active custom accent")
     expectEqual(defaults.string(forKey: "polarisCustomAccentHex"), "32A6A6", "legacy custom recovers the actual old hue-based accent")
     expectEqual(defaults.double(forKey: "customHue"), 0.5, "legacy hue remains intact")
@@ -89,16 +89,28 @@ func runAppearanceTests() {
     defaults.set(0.8, forKey: "customHue")
     defaults.set("warm", forKey: "polarisSurface")
     defaults.set("lime", forKey: "polarisAccent")
-    PolarisAppearancePreferences.migrateIfNeeded(in: defaults)
+    PolarisAppearancePreferences.migrateIfNeeded(in: defaults, systemIsDark: true)
     expectEqual(defaults.string(forKey: "polarisAccent"), "lime", "explicit Polaris preset wins over dormant legacy theme")
-    expectEqual(defaults.string(forKey: "polarisSurface"), "warm", "explicit Polaris surface wins over legacy background")
+    expectEqual(defaults.string(forKey: "polarisSurface"), "warm", "explicit warm surface wins over legacy custom in system dark mode")
     defaults.set("rose", forKey: "polarisAccent")
-    PolarisAppearancePreferences.migrateIfNeeded(in: defaults)
+    PolarisAppearancePreferences.migrateIfNeeded(in: defaults, systemIsDark: false)
     expectEqual(defaults.string(forKey: "polarisAccent"), "rose", "repeated migration never replays legacy values")
+
+    for legacyTheme in [AppTheme.custom, .lavender] {
+        reset()
+        defaults.set(legacyTheme.rawValue, forKey: "appTheme")
+        PolarisAppearancePreferences.migrateIfNeeded(in: defaults, systemIsDark: true)
+        expectEqual(defaults.string(forKey: "polarisSurface"), "graphite", "legacy custom/preset preserves system dark appearance")
+        expectEqual(defaults.integer(forKey: "appTheme"), legacyTheme.rawValue, "dark migration keeps the legacy theme preference")
+    }
+
+    reset()
+    PolarisAppearancePreferences.migrateIfNeeded(in: defaults, systemIsDark: true)
+    expectEqual(defaults.string(forKey: "polarisSurface"), "graphite", "new install stays graphite regardless of system appearance")
 
     reset()
     defaults.set(AppTheme.midnight.rawValue, forKey: "appTheme")
-    PolarisAppearancePreferences.migrateIfNeeded(in: defaults)
+    PolarisAppearancePreferences.migrateIfNeeded(in: defaults, systemIsDark: false)
     expectEqual(defaults.string(forKey: "polarisSurface"), "graphite", "legacy midnight keeps a dark surface")
     expectEqual(defaults.string(forKey: "polarisAccent"), "custom", "legacy non-Polaris preset is retained as a custom color")
 }

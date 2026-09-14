@@ -80,9 +80,6 @@ struct TaskListView: View {
             Rectangle().fill(palette.line).frame(height: 0.5)
             footer
         }
-        .overlay(alignment: .bottom) {
-            UndoToast(message: "目标已达成", trigger: undoTrigger, onUndo: undo, isVisible: $showUndo).padding(.bottom, 50)
-        }
         .onChange(of: showUndo) { _, value in presentation.canUndoCompletion = value }
         .onAppear { ensureSelection(); focusGeneration += 1 }
         .onChange(of: selectedID) { _, id in
@@ -136,7 +133,8 @@ struct TaskListView: View {
     private var footer: some View {
         PolarisFooter(isActive: path.isEmpty, onNew: { path.append(.create()) }, onEdit: editAction,
             onSettings: { path.append(.settings) },
-            onActions: { actionIndex = 0; presentation.actionsArePresented.toggle() })
+            onActions: { actionIndex = 0; presentation.actionsArePresented.toggle() },
+            completionToast: UndoToast(message: "目标已达成", trigger: undoTrigger, onUndo: undo, isVisible: $showUndo))
             .popover(isPresented: actionsPresented, arrowEdge: .bottom) { actionMenu }
     }
     private var editAction: (() -> Void)? {

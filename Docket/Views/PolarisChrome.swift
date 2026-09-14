@@ -56,18 +56,30 @@ struct PolarisFooter: View {
     var onEdit: (() -> Void)?
     var onSettings: (() -> Void)?
     var onActions: (() -> Void)?
+    var completionToast: UndoToast? = nil
     @Environment(\.polarisPalette) private var palette
     @AppStorage("panelShortcutsEnabled") private var localKeys = true
+    private var showsCompletion: Bool { completionToast?.isVisible == true }
     var body: some View {
         HStack(spacing: 8) {
-            Text("Polaris").font(PolarisType.metadata).foregroundStyle(palette.secondary)
-            PolarisSyncStatus(visible: isActive)
-            Spacer(minLength: 0)
-            if let onEdit {
-                Button(action: onEdit) {
-                    HStack(spacing: 5) { Text("编辑目标"); if localKeys { Text("↵") } }
-                        .font(PolarisType.metadata).padding(.horizontal, 3).frame(height: 28).contentShape(Rectangle())
-                }.buttonStyle(GoalControlStyle()).foregroundStyle(palette.secondary)
+            ZStack(alignment: .leading) {
+                HStack(spacing: 8) {
+                    Text("Polaris").font(PolarisType.metadata).foregroundStyle(palette.secondary)
+                    PolarisSyncStatus(visible: isActive && !showsCompletion)
+                    Spacer(minLength: 0)
+                    if let onEdit {
+                        Button(action: onEdit) {
+                            HStack(spacing: 5) { Text("编辑目标"); if localKeys { Text("↵") } }
+                                .font(PolarisType.metadata).padding(.horizontal, 3).frame(height: 28).contentShape(Rectangle())
+                        }.buttonStyle(GoalControlStyle()).foregroundStyle(palette.secondary)
+                    }
+                }
+                .opacity(showsCompletion ? 0 : 1)
+                .allowsHitTesting(!showsCompletion)
+                .accessibilityHidden(showsCompletion)
+                // Keep this slot stable across visibility and trigger changes;
+                // UndoToast owns its transition and replacement-completion timer.
+                if let completionToast { completionToast }
             }
             PolarisGlassGroup {
                 HStack(spacing: 2) {

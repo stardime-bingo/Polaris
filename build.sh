@@ -120,6 +120,7 @@ cp "$SRC_DIR/menubar-icon@2x.png" "$APP_BUNDLE/Contents/Resources/"
 cp -R "$SRC_DIR/en.lproj" "$APP_BUNDLE/Contents/Resources/"
 cp -R "$SRC_DIR/it.lproj" "$APP_BUNDLE/Contents/Resources/"
 cp -R "$SRC_DIR/zh-Hans.lproj" "$APP_BUNDLE/Contents/Resources/"
+cp "$SRC_DIR/Resources/Pow-LICENSE.txt" "$APP_BUNDLE/Contents/Resources/"
 
 # Generate Info.plist
 cat > "$APP_BUNDLE/Contents/Info.plist" << 'PLIST'
@@ -134,9 +135,9 @@ cat > "$APP_BUNDLE/Contents/Info.plist" << 'PLIST'
     <key>CFBundleIdentifier</key>
     <string>com.bingowu.polaris</string>
     <key>CFBundleVersion</key>
-    <string>24</string>
+    <string>28</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.4.2</string>
+    <string>1.5.2</string>
     <key>CFBundleExecutable</key>
     <string>Polaris</string>
     <key>CFBundleIconFile</key>

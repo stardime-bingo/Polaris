@@ -89,6 +89,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                 RemindersSync.shared.pullChanges(for: syncedLists)
             }
         }
+        // The isolated demo opens its native panel after launch, even when a
+        // crowded menu bar hides its status item. Production launch is unchanged.
+        if DocketRuntime.isPreview {
+            DispatchQueue.main.async { self.togglePopover() }
+        }
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -194,11 +199,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
     private func setupBadgeTimer() {
         badgeTimer?.invalidate()
-        badgeTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
-            self?.updateBadge()
+        var lastBadgeRefresh = Date()
+        // Run only while the panel is open. Countdown boundaries must not wait
+        // for the minute badge refresh, including when a menu tracks the mouse.
+        badgeTimer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
+            let now = Date()
+            if abs(now.timeIntervalSince(lastBadgeRefresh)) >= 60 {
+                self?.updateBadge()
+                lastBadgeRefresh = now
+            }
             NotificationCenter.default.post(name: .polarisClockTick, object: nil)
         }
-        badgeTimer?.tolerance = 10
+        badgeTimer?.tolerance = 0.1
+        if let badgeTimer { RunLoop.main.add(badgeTimer, forMode: .common) }
     }
 
     // MARK: - Click Handling
@@ -357,6 +370,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     }
 
     static var preferredPopoverSize: NSSize {
+        if DocketRuntime.isPreview,
+           let index = ProcessInfo.processInfo.arguments.firstIndex(of: "--preview-available-height"),
+           ProcessInfo.processInfo.arguments.indices.contains(index + 1),
+           let height = Double(ProcessInfo.processInfo.arguments[index + 1]), height.isFinite, height > 0 {
+            return GoalBoardRules.panelSize(availableHeight: height)
+        }
         let screen = shared?.statusItem?.button?.window?.screen ?? NSScreen.main
         return GoalBoardRules.panelSize(availableHeight: screen?.visibleFrame.height ?? 800)
     }
@@ -463,7 +482,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             startEventMonitor()
             setupBadgeTimer()
             NotificationCenter.default.post(name: .popoverDidOpen, object: nil)
-            DispatchQueue.main.async { self.writeRuntimeState() }
+            DispatchQueue.main.async {
+                // A hidden status item can have an off-screen anchor on a
+                // multi-display desktop. Place only the development preview
+                // on the current screen so it can be inspected after launch.
+                if DocketRuntime.isPreview,
+                   let window = self.popover.contentViewController?.view.window,
+                   let screen = NSScreen.main ?? NSScreen.screens.first {
+                    let frame = screen.visibleFrame
+                    window.setFrameOrigin(NSPoint(x: frame.midX - window.frame.width / 2,
+                                                  y: frame.midY - window.frame.height / 2))
+                    window.makeKeyAndOrderFront(nil)
+                }
+                self.writeRuntimeState()
+            }
         }
     }
 
@@ -473,6 +505,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     }
 
     private func startEventMonitor() {
+        // Keep the isolated preview available while inspecting it from development
+        // tools. Escape and the menu item still close it normally.
+        guard !DocketRuntime.isPreview else { return }
         // Guard against double-registration — `togglePopover()` could be
         // called while the popover is still animating from a previous open,
         // and every unremoved monitor keeps firing indefinitely.

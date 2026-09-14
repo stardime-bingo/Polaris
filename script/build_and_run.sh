@@ -43,9 +43,13 @@ else
     codesign --force --sign - --identifier "$PREVIEW_ID" "$APP_BUNDLE"
     printf '%s\n' "$FINGERPRINT" > "$PREVIEW_DIR/source.sha256"
 fi
+PREVIEW_ARGS=(--preview-data "$DATA_DIR")
+if [[ -n "${POLARIS_PREVIEW_AVAILABLE_HEIGHT:-}" ]]; then
+    PREVIEW_ARGS+=(--preview-available-height "$POLARIS_PREVIEW_AVAILABLE_HEIGHT")
+fi
 case "$MODE" in
-  --debug) exec lldb -- "$APP_BINARY" --preview-data "$DATA_DIR" ;;
-  *) /usr/bin/open -n "$APP_BUNDLE" --args --preview-data "$DATA_DIR" ;;
+  --debug) exec lldb -- "$APP_BINARY" "${PREVIEW_ARGS[@]}" ;;
+  *) /usr/bin/open -n "$APP_BUNDLE" --args "${PREVIEW_ARGS[@]}" ;;
 esac
 case "$MODE" in
   --logs|--telemetry) exec /usr/bin/log stream --level info --style compact --predicate 'process == "Polaris"' ;;

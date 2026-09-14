@@ -1,33 +1,23 @@
 import SwiftUI
 import AppKit
 
-/// One native material behind the entire panel; content stays on a readable tint.
+/// Text stays on a clean, opaque surface. Glass belongs to the small controls,
+/// not the reading canvas, where the desktop would tint every row.
 struct PolarisPanelBackground: View {
     let palette: PolarisPalette
-    @AppStorage("polarisGlassEnabled") private var glass = true
-    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     var body: some View {
-        ZStack {
-            if glass && !reduceTransparency {
-                PolarisVisualEffect(isDark: palette.isDark)
-                palette.surface.opacity(palette.isDark ? 0.62 : 0.55)
-            } else { palette.surface }
-        }.ignoresSafeArea()
+        palette.surface.ignoresSafeArea()
     }
 }
 
-private struct PolarisVisualEffect: NSViewRepresentable {
-    let isDark: Bool
-    func makeNSView(context: Context) -> NSVisualEffectView {
-        let view = NSVisualEffectView()
-        view.material = .popover
-        view.blendingMode = .behindWindow
-        view.state = .active
-        return view
-    }
-    func updateNSView(_ view: NSVisualEffectView, context: Context) {
-        view.appearance = NSAppearance(named: isDark ? .darkAqua : .aqua)
-    }
+/// SF system text, with the platform's Chinese fallback and optical sizing.
+/// Only navigation uses a stronger weight; content and metadata stay regular.
+enum PolarisType {
+    static let navigation = Font.system(size: 13, weight: .semibold)
+    static let title = Font.system(size: 13, weight: .regular)
+    static let detail = Font.system(size: 12, weight: .regular)
+    static let metadata = Font.system(size: 11, weight: .regular)
+    static let editorTitle = Font.system(size: 16, weight: .regular)
 }
 
 struct PolarisGlassGroup<Content: View>: View {
@@ -66,18 +56,30 @@ struct PolarisFooter: View {
     var onEdit: (() -> Void)?
     var onSettings: (() -> Void)?
     var onActions: (() -> Void)?
+    var completionToast: UndoToast? = nil
     @Environment(\.polarisPalette) private var palette
     @AppStorage("panelShortcutsEnabled") private var localKeys = true
+    private var showsCompletion: Bool { completionToast?.isVisible == true }
     var body: some View {
         HStack(spacing: 8) {
-            Text("Polaris").font(.system(size: 11, weight: .medium)).foregroundStyle(palette.secondary)
-            PolarisSyncStatus(visible: isActive)
-            Spacer(minLength: 0)
-            if let onEdit {
-                Button(action: onEdit) {
-                    HStack(spacing: 5) { Text("编辑目标"); if localKeys { Text("↵") } }
-                        .font(.system(size: 11)).padding(.horizontal, 3).frame(height: 28).contentShape(Rectangle())
-                }.buttonStyle(GoalControlStyle()).foregroundStyle(palette.secondary)
+            ZStack(alignment: .leading) {
+                HStack(spacing: 8) {
+                    Text("Polaris").font(PolarisType.metadata).foregroundStyle(palette.secondary)
+                    PolarisSyncStatus(visible: isActive && !showsCompletion)
+                    Spacer(minLength: 0)
+                    if let onEdit {
+                        Button(action: onEdit) {
+                            HStack(spacing: 5) { Text("编辑目标"); if localKeys { Text("↵") } }
+                                .font(PolarisType.metadata).padding(.horizontal, 3).frame(height: 28).contentShape(Rectangle())
+                        }.buttonStyle(GoalControlStyle()).foregroundStyle(palette.secondary)
+                    }
+                }
+                .opacity(showsCompletion ? 0 : 1)
+                .allowsHitTesting(!showsCompletion)
+                .accessibilityHidden(showsCompletion)
+                // Keep this slot stable across visibility and trigger changes;
+                // UndoToast owns its transition and replacement-completion timer.
+                if let completionToast { completionToast }
             }
             PolarisGlassGroup {
                 HStack(spacing: 2) {

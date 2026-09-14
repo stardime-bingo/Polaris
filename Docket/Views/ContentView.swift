@@ -41,10 +41,17 @@ struct ContentView: View {
     @State private var keyMonitor: Any?
     @AppStorage("polarisSurface") private var surface = "graphite"
     @AppStorage("polarisAccent") private var accent = "klein"
+    @AppStorage("polarisCustomAccentHex") private var customAccentHex = PolarisAppearancePreferences.defaultHex
     @AppStorage("panelShortcutsEnabled") private var localKeys = true
     @AppStorage("polarisMotionEnabled") private var motion = true
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    private var palette: PolarisPalette { PolarisPalette(surfaceStyle: PolarisSurface(rawValue: surface) ?? .graphite, accentStyle: PolarisAccent(rawValue: accent) ?? .klein) }
+    init() { PolarisAppearancePreferences.migrateIfNeeded(in: .standard) }
+
+    private var palette: PolarisPalette {
+        PolarisPalette(surfaceStyle: PolarisSurface(rawValue: surface) ?? .graphite,
+                       accentStyle: PolarisAccent(rawValue: accent) ?? .klein,
+                       customAccentHex: accent == PolarisAppearancePreferences.customAccent ? customAccentHex : nil)
+    }
     private var editing: Bool { path.last?.isEditor == true }
     private var panelWidth: CGFloat { 408 }
     var body: some View {
@@ -102,6 +109,10 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: .popoverDidOpen)) { _ in now = Date(); panelHeight = AppDelegate.preferredPopoverSize.height }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)) { _ in panelHeight = AppDelegate.preferredPopoverSize.height }
         .onReceive(NotificationCenter.default.publisher(for: .polarisClockTick)) { _ in now = Date() }
+        .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didWakeNotification)) { _ in now = Date() }
+        .onReceive(NotificationCenter.default.publisher(for: .NSSystemTimeZoneDidChange)) { _ in now = Date() }
+        .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged)) { _ in now = Date() }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in now = Date() }
         .onReceive(NotificationCenter.default.publisher(for: NSMenu.didBeginTrackingNotification)) { _ in menuTracking = true }
         .onReceive(NotificationCenter.default.publisher(for: NSMenu.didEndTrackingNotification)) { _ in menuTracking = false }
         .onAppear {

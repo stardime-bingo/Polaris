@@ -8,10 +8,8 @@ import SwiftUI
 struct OnboardingView: View {
     @Binding var isPresented: Bool
 
-    @AppStorage("appTheme") private var themeRaw: Int = AppTheme.white.rawValue
-    @AppStorage("customHue") private var customHue: Double = 0.55
-
-    private var accent: Color { ThemeManager.resolvedAccent(themeRaw: themeRaw, customHue: customHue) }
+    @Environment(\.polarisPalette) private var palette
+    private var accent: Color { palette.accentInk }
 
     @State private var showIcon = false
     @State private var showTitle = false
@@ -78,8 +76,8 @@ struct OnboardingView: View {
                     .font(.body.weight(.semibold))
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 11)
-                    .background(Capsule().fill(accent.gradient))
-                    .foregroundStyle(.white)
+                    .background(Capsule().fill(palette.action))
+                    .foregroundStyle(palette.actionText)
             }
             .buttonStyle(.plain)
             .scaleEffect(showButton ? 1 : 0.9)

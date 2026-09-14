@@ -32,7 +32,7 @@ struct GoalScheduleView: View {
                     item = GoalScheduleRules.changingPeriod(item, to: $0)
                 })) {
                     ForEach(GoalPeriod.allCases) { Text($0.shortTitle).tag($0) }
-                }.labelsHidden().pickerStyle(.segmented).controlSize(.small)
+                }.labelsHidden().pickerStyle(.segmented).controlSize(.small).tint(palette.action)
             }.frame(minHeight: 36)
             Button { calendarPresented.wrappedValue.toggle() } label: {
                 GoalOptionLabel(title: "截止日期", value: item.dueDate.map { $0.formatted(.dateTime.year().month().day().locale(DueDateFormatter.locale)) } ?? "未设定")

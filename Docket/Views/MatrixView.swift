@@ -7,8 +7,7 @@ import SwiftUI
 /// Eisenhower Matrix view with free-positioned, draggable task pills.
 ///
 /// Design notes:
-///  • Quadrants use ultra-subtle tinted fills + hairline borders for a quiet,
-///    professional feel — colour identifies, doesn't shout.
+///  • Colour identifies quadrant headings; reading surfaces stay neutral.
 ///  • Pills truncate text natively via SwiftUI; on hover, long titles scroll
 ///    horizontally so the full text becomes readable without opening the task.
 ///  • Pills cannot fully overlap — a per-quadrant rect-overlap resolver
@@ -164,12 +163,12 @@ struct MatrixView: View {
             let resolved = resolvePositions(for: tasks, in: geo.size)
 
             ZStack(alignment: .topLeading) {
-                // Background — quiet tinted fill + hairline border.
+                // A single neutral reading surface; quadrant colour stays in the heading.
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(color.opacity(0.055))
+                    .fill(palette.hover)
                     .overlay(
                         RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .strokeBorder(color.opacity(0.18), lineWidth: 0.75)
+                            .strokeBorder(palette.line, lineWidth: 0.5)
                     )
 
                 // Empty-state hint — only shown when the quadrant has no pills.
@@ -201,7 +200,7 @@ struct MatrixView: View {
                         .foregroundStyle(palette.ink)
                         .padding(.horizontal, 5)
                         .padding(.vertical, 1.5)
-                        .background(Capsule().fill(color.opacity(0.14)))
+                        .background(Capsule().fill(palette.selection))
                         .position(x: geo.size.width - 16, y: 13)
                 }
 
@@ -210,7 +209,6 @@ struct MatrixView: View {
                     TaskDot(
                         item: item,
                         quadrant: quadrant,
-                        color: color,
                         maxChars: matrixLabelLength,
                         lineCount: matrixLineCount,
                         bounds: geo.size,
@@ -295,11 +293,8 @@ struct MatrixView: View {
                                 ForEach(unassigned) { item in
                                     Button { path.append(.detail(item)) } label: {
                                         HStack(spacing: 5) {
-                                            Circle()
-                                                .fill(priorityColor(item.priority))
-                                                .frame(width: 5, height: 5)
                                             Text(item.title)
-                                                .font(.system(size: 11, weight: .medium))
+                                                .font(PolarisType.metadata)
                                                 .lineLimit(1)
                                                 .truncationMode(.tail)
                                         }
@@ -307,7 +302,7 @@ struct MatrixView: View {
                                         .padding(.vertical, 5)
                                         .background(
                                             RoundedRectangle(cornerRadius: 7, style: .continuous)
-                                                .fill(.regularMaterial)
+                                                .fill(palette.raised)
                                         )
                                         .overlay(
                                             RoundedRectangle(cornerRadius: 7, style: .continuous)
@@ -363,7 +358,6 @@ struct MatrixView: View {
         }
     }
 
-    private func priorityColor(_ p: Priority) -> Color { p.color }
 }
 
 // MARK: - Task Dot
@@ -376,7 +370,6 @@ struct MatrixView: View {
 struct TaskDot: View {
     let item: TodoItem
     let quadrant: Quadrant
-    let color: Color
     let maxChars: Int
     let lineCount: Int
     let bounds: CGSize
@@ -392,6 +385,7 @@ struct TaskDot: View {
     @State private var isDragging = false
     @State private var isHovering = false
     @State private var dragMaxDistance: CGFloat = 0
+    @Environment(\.polarisPalette) private var palette
 
     /// Width budget for the title text. Capped to the available container so
     /// the pill itself never exceeds the quadrant box.
@@ -403,42 +397,39 @@ struct TaskDot: View {
 
     var body: some View {
         HStack(spacing: 5) {
-            Circle()
-                .fill(color)
-                .frame(width: 5, height: 5)
             Group {
                 if lineCount == 1 {
                     // Single-line: marquee scrolls on hover when truncated.
                     // Suppress while dragging so the title doesn't slide under the cursor.
                     MarqueeText(
                         text: item.title,
-                        font: .system(size: 10, weight: .medium),
+                        font: .system(size: 10, weight: .regular),
                         maxWidth: textMaxWidth,
                         isHovering: isHovering && !isDragging
                     )
                 } else {
                     Text(item.title)
-                        .font(.system(size: 10, weight: .medium))
+                        .font(.system(size: 10, weight: .regular))
                         .lineLimit(lineCount)
                         .truncationMode(.tail)
                         .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: textMaxWidth, alignment: .leading)
                 }
             }
-            .foregroundStyle(.primary)
+            .foregroundStyle(palette.ink)
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 4.5)
         .background(
             RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .fill(.regularMaterial)
+                .fill(palette.raised)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .strokeBorder(color.opacity(isDragging ? 0.45 : 0.18), lineWidth: 0.6)
+                .strokeBorder(isDragging ? palette.accentInk : palette.line, lineWidth: 0.6)
         )
         .shadow(
-            color: .black.opacity(isDragging ? 0.18 : 0.06),
+            color: .black.opacity(isDragging ? 0.18 : 0),
             radius: isDragging ? 6 : 1.5,
             x: 0,
             y: isDragging ? 3 : 0.5

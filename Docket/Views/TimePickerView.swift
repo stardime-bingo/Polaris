@@ -8,10 +8,8 @@ import SwiftUI
 struct TimePickerView: View {
     @Binding var date: Date
 
-    @AppStorage("appTheme") private var themeRaw: Int = AppTheme.white.rawValue
-    @AppStorage("customHue") private var customHue: Double = 0.55
-
-    private var accent: Color { ThemeManager.resolvedAccent(themeRaw: themeRaw, customHue: customHue) }
+    @Environment(\.polarisPalette) private var palette
+    private var accent: Color { palette.accentInk }
     private let calendar = Calendar.current
     private var hour: Int { calendar.component(.hour, from: date) }
     private var minute: Int { calendar.component(.minute, from: date) }

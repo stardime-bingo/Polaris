@@ -38,7 +38,7 @@ struct GoalEditorView: View {
                     .frame(minWidth: 48, minHeight: 32).contentShape(Rectangle())
                     .buttonStyle(.plain).foregroundStyle(palette.secondary)
                 Spacer()
-                Text(isNew ? "新建目标" : "编辑目标").font(.system(size: 12.5, weight: .medium))
+                Text(isNew ? "新建目标" : "编辑目标").font(PolarisType.navigation)
                 Spacer()
                 Button(action: save) {
                     Text("保存").font(.system(size: 12, weight: .medium))
@@ -50,7 +50,7 @@ struct GoalEditorView: View {
                 VStack(alignment: .leading, spacing: 20) {
                     VStack(alignment: .leading, spacing: 14) {
                         TextField("你想达成什么？", text: $draft.title, axis: .vertical)
-                            .textFieldStyle(.plain).font(.system(size: 17, weight: .medium))
+                            .textFieldStyle(.plain).font(PolarisType.editorTitle)
                             .lineSpacing(4).lineLimit(1...6).focused($titleFocused).accessibilityLabel("目标名称")
                         GoalEditorSection(title: "目标描述") {
                             TextField("补充目标背景、衡量标准或想法…", text: $draft.notes, axis: .vertical)

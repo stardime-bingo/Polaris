@@ -50,7 +50,7 @@ struct TaskRowView: View {
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-          summaryControl
+          summaryRow
               .onHover { value in
                   hovered = value
                   AppDelegate.shared?.recordVerificationEvent("list.row.hover", fields: ["goalID": item.id.uuidString, "hovered": value, "selected": isSelected])
@@ -80,11 +80,27 @@ struct TaskRowView: View {
         }
         .frame(minHeight: 36)
         .overlay(alignment: .topLeading) {
-            if isSelected { RoundedRectangle(cornerRadius: 1).fill(palette.selectionLine).frame(width: 2, height: 16).padding(.leading, 1).padding(.top, 9) }
+            if isSelected { RoundedRectangle(cornerRadius: 1).fill(palette.selectionLine).frame(width: 2, height: 16).padding(.leading, 1).padding(.top, 9).allowsHitTesting(false) }
         }
-        .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(isSelected && contrast == .increased ? palette.accentInk : .clear, lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(isSelected && contrast == .increased ? palette.accentInk : .clear, lineWidth: 1).allowsHitTesting(false))
         .contentShape(Rectangle())
         .accessibilityElement(children: .contain)
+    }
+
+    private var summaryRow: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Button(action: onComplete) {
+                Circle().strokeBorder(isSelected ? palette.accentInk : palette.muted, lineWidth: 1)
+                    .frame(width: 12, height: 12)
+                    .frame(width: 24, height: 28).contentShape(Rectangle())
+            }.buttonStyle(GoalControlStyle())
+                .help("标记已达成")
+                .accessibilityLabel("标记已达成：\(item.title)")
+                .padding(.top, 3)
+            summaryControl
+        }
+        .padding(.leading, 8)
+        .background(isSelected ? palette.goalSelection : hovered ? palette.hover : .clear, in: RoundedRectangle(cornerRadius: 5))
     }
 
     @ViewBuilder private var summaryControl: some View {
@@ -101,23 +117,26 @@ struct TaskRowView: View {
             } label: { summary }
                 .buttonStyle(TaskRowSummaryStyle(isSelected: isSelected, hovered: hovered))
                 .accessibilityAddTraits(isSelected ? .isSelected : [])
+                .accessibilityValue(featured ? "菜单栏主目标" : "")
         } else {
             // Legacy swipe wrappers own their own tap gesture.
-            summary.background(isSelected ? palette.goalSelection : hovered ? palette.hover : .clear, in: RoundedRectangle(cornerRadius: 5))
+            summary
         }
     }
 
     private var summary: some View {
-          HStack(alignment: .top, spacing: 8) {
-            Group {
-                if featured { Image(nsImage: PolarisSymbol.menuImage()).renderingMode(.template).resizable().scaledToFit().frame(width: 24, height: 18) }
-                else { Circle().strokeBorder(isSelected ? palette.accentInk : palette.muted, lineWidth: 1).frame(width: 10, height: 10) }
-            }.frame(width: 24, height: 20).foregroundStyle(featured ? palette.accentInk : palette.muted)
-                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 4) {
-                Text(item.title).font(PolarisType.title)
-                    .foregroundStyle(palette.ink).lineSpacing(3)
-                    .fixedSize(horizontal: false, vertical: true)
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text(item.title).font(PolarisType.title)
+                        .foregroundStyle(palette.ink).lineSpacing(3)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    if featured {
+                        Image(nsImage: PolarisSymbol.menuImage()).renderingMode(.template).resizable().scaledToFit()
+                            .frame(width: 16, height: 12).foregroundStyle(palette.accentInk)
+                            .help("菜单栏主目标").accessibilityHidden(true)
+                    }
+                }
                 HStack(spacing: 10) {
                     if let quadrant = item.quadrant {
                         HStack(spacing: 4) {
@@ -151,8 +170,7 @@ struct TaskRowView: View {
                         .accessibilityLabel("子任务已完成 \(item.steps.filter(\.isCompleted).count) 个，共 \(item.steps.count) 个")
                 }
             }.frame(maxWidth: .infinity, alignment: .leading)
-          }
-          .padding(.horizontal, 8).padding(.vertical, 7).contentShape(Rectangle())
+          .padding(.trailing, 8).padding(.vertical, 7).contentShape(Rectangle())
     }
 
 }

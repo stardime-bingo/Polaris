@@ -69,11 +69,59 @@ final class NotificationManager {
         check(!editorReloaded.mutate(matrixGoal.id) { $0.quadrant = .eliminate }, "matrix write failure is reported")
         check(editorReloaded.items == beforeFailedDrag && editorReloaded.lastPersistenceError != nil, "failed matrix move rolls back visible classification")
 
+        // Completion undo uses the production Store paths. Steps are local-only,
+        // so a checked successor can still have its original modification time.
+        let untouchedRoot = root.appendingPathComponent("recurrence-untouched")
+        let untouchedStore = Store(directory: untouchedRoot, defaults: defaults, performsSideEffects: false)
+        var recurring = TodoItem(title: "Fictional daily goal", steps: [GoalStep(title: "First step", isCompleted: true), GoalStep(title: "Second step")])
+        recurring.listId = untouchedStore.activeListId
+        recurring.dueDate = Date(timeIntervalSince1970: 1_800_000_000)
+        recurring.recurrence = Recurrence(frequency: .daily, interval: 1, endDate: nil)
+        check(untouchedStore.add(recurring), "save untouched recurrence fixture")
+        check(untouchedStore.complete(recurring), "complete recurrence and persist its successor")
+        let untouchedParent = untouchedStore.items.first { $0.id == recurring.id }!
+        let untouchedChild = untouchedStore.items.first { $0.id == untouchedParent.spawnedRecurrenceID }!
+        check(untouchedChild.recurrenceParentID == recurring.id && untouchedChild.steps.allSatisfy { !$0.isCompleted }, "successor starts linked with cleared step progress")
+        check(untouchedStore.undoCompletion(recurring), "undo completion with an untouched successor")
+        check(untouchedStore.items.count == 1 && untouchedStore.items[0].id == recurring.id && !untouchedStore.items[0].isCompleted, "untouched successor is removed and original occurrence restored")
+        check(untouchedStore.items[0].spawnedRecurrenceID == nil && untouchedStore.items[0].steps == recurring.steps, "untouched undo clears the successor link and preserves original steps")
+        let untouchedReloaded = Store(directory: untouchedRoot, defaults: defaults, performsSideEffects: false)
+        check(untouchedReloaded.items == untouchedStore.items, "untouched undo survives real JSON reload")
+
+        let progressedRoot = root.appendingPathComponent("recurrence-progressed")
+        let progressedStore = Store(directory: progressedRoot, defaults: defaults, performsSideEffects: false)
+        var progressedGoal = recurring
+        progressedGoal.id = UUID()
+        progressedGoal.listId = progressedStore.activeListId
+        check(progressedStore.add(progressedGoal), "save progressed recurrence fixture")
+        check(progressedStore.complete(progressedGoal), "complete original occurrence before checking successor step")
+        let completedParent = progressedStore.items.first { $0.id == progressedGoal.id }!
+        let freshChild = progressedStore.items.first { $0.id == completedParent.spawnedRecurrenceID }!
+        check(freshChild.localModifiedAt == freshChild.createdAt, "fresh successor has unchanged parent-field timestamp")
+        check(progressedStore.toggleStep(goalID: freshChild.id, stepID: freshChild.steps[0].id), "check a successor step through the real local-only toggle path")
+        var expectedChild = freshChild
+        expectedChild.steps[0].isCompleted = true
+        check(progressedStore.items.first { $0.id == freshChild.id } == expectedChild, "successor checkbox preserves every parent field including timestamp and sync metadata")
+        let beforeUndoReloaded = Store(directory: progressedRoot, defaults: defaults, performsSideEffects: false)
+        check(beforeUndoReloaded.items.first { $0.id == freshChild.id } == expectedChild, "successor progress is on disk before undo")
+        check(progressedStore.undoCompletion(progressedGoal), "undo completion after successor step progress")
+        check(progressedStore.items.count == 2 && progressedStore.items.contains { $0.id == progressedGoal.id && !$0.isCompleted }, "progressed undo restores the original occurrence without deleting the successor")
+        check(progressedStore.items.first { $0.id == freshChild.id } == expectedChild, "undo preserves successor identity, progress, timestamp and sync metadata exactly")
+        let restoredParent = progressedStore.items.first { $0.id == progressedGoal.id }!
+        check(restoredParent.spawnedRecurrenceID == freshChild.id && expectedChild.recurrenceParentID == restoredParent.id, "progressed undo keeps both sides of the recurrence association")
+        let progressedReloaded = Store(directory: progressedRoot, defaults: defaults, performsSideEffects: false)
+        check(progressedReloaded.items == progressedStore.items, "restored parent and progressed successor survive real JSON reload together")
+        check(progressedReloaded.complete(restoredParent), "complete the restored occurrence again after reload")
+        check(progressedReloaded.items.count == 2 && progressedReloaded.items.filter { $0.recurrenceParentID == progressedGoal.id }.count == 1, "recompletion does not create a duplicate successor")
+        check(progressedReloaded.items.first { $0.id == progressedGoal.id }?.spawnedRecurrenceID == freshChild.id && progressedReloaded.items.first { $0.id == freshChild.id } == expectedChild, "recompletion retains the existing successor and its checked step")
+        let recompletedReloaded = Store(directory: progressedRoot, defaults: defaults, performsSideEffects: false)
+        check(recompletedReloaded.items == progressedReloaded.items, "recompletion and recurrence association remain consistent after reload")
+
         let dataURL = root.appendingPathComponent("tasks.json")
         try FileManager.default.removeItem(at: dataURL)
         try FileManager.default.createDirectory(at: dataURL, withIntermediateDirectories: false)
         check(!store.toggleStep(goalID: goal.id, stepID: goal.steps[1].id), "persistence failure is reported")
         check(store.items[0] == original && store.lastPersistenceError != nil, "failed write rolls back the visible checkbox")
-        print("\(checks) step and matrix persistence checks passed")
+        print("\(checks) step, matrix and recurrence undo persistence checks passed")
     }
 }

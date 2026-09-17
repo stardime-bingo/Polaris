@@ -178,7 +178,7 @@ struct TaskListView: View {
     @ViewBuilder private func rowActions(_ item: TodoItem) -> some View {
         Button("编辑目标") { selectedID = item.id; editSelected() }
         Button(item.isPinned ? "取消置顶" : "置顶目标") { store.togglePin(item) }
-        Button("设为菜单栏主目标") { store.featureInMenuBar(item) }
+        Button(store.menuBarGoal?.id == item.id ? "从菜单栏移除" : "设为菜单栏主目标") { feature(item) }
         Button("标记已达成") { complete(item) }
         Divider()
         Button("上移") { move(item, by: -1) }.disabled(moveNeighbor(item, by: -1) == nil); Button("下移") { move(item, by: 1) }.disabled(moveNeighbor(item, by: 1) == nil)
@@ -222,5 +222,12 @@ struct TaskListView: View {
         undoItem = item; showUndo = true
         presentation.canUndoCompletion = true; undoTrigger += 1
     }
-    private func undo() { presentation.canUndoCompletion = false; if let undoItem { store.undoCompletion(undoItem) }; undoItem = nil }
+    private func undo() {
+        presentation.canUndoCompletion = false
+        if let undoItem, store.undoCompletion(undoItem), items.contains(where: { $0.id == undoItem.id }) {
+            selectedID = undoItem.id
+            scrollRequest += 1
+        }
+        undoItem = nil
+    }
 }

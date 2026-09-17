@@ -22,7 +22,7 @@ The hero is AI-generated brand artwork. Product screenshots come from the native
 - Multiple goal lists, colored labels, a customizable priority matrix, completed history and JSON import/export.
 - Live countdowns with the absolute deadline in a tooltip; date-only goals keep their end-of-day deadline.
 - Matrix icons and custom labels also appear on the home list without changing goal order.
-- Hover is separate from click and keyboard selection.
+- Click a parent goal's circle to complete it; click its title to select, or double-click to edit. Hover remains separate from click and keyboard selection.
 - Consistent panel dimensions, three clean surfaces, six presets, a mouse-driven color field with optional HEX, and system type with clear hierarchy. Category icons share the matrix colors; supporting text has no colored background. Near and overdue deadlines use distinct text colors. Selected rows stay neutral, with the accent reserved for a thin indicator, checkmarks and progress.
 - A compact completion receipt sits in the fixed footer and disappears after 2.2 seconds, keeping the last list row visible. Its brief local pulse is adapted from MIT-licensed [Pow](https://github.com/EmergeTools/Pow); attribution ships with the app.
 - Native transparency and macOS 26 Liquid Glass controls, with material fallbacks on earlier systems.
@@ -58,7 +58,7 @@ Local JSON lives in `~/Library/Application Support/Polaris/` for command-line bu
 ./script/test_step_persistence.sh
 ```
 
-6793 logic checks and 19 step-persistence checks are included. CI builds both the command-line and Xcode products; native UI changes still require hands-on verification. Read [CONTRIBUTING.md](CONTRIBUTING.md) and [SECURITY.md](SECURITY.md).
+6793 logic checks and 41 persistence checks for steps, matrix changes and completion undo are included. CI builds both the command-line and Xcode products; native UI changes still require hands-on verification. Read [CONTRIBUTING.md](CONTRIBUTING.md) and [SECURITY.md](SECURITY.md).
 
 ## Credits
 

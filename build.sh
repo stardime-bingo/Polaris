@@ -135,9 +135,9 @@ cat > "$APP_BUNDLE/Contents/Info.plist" << 'PLIST'
     <key>CFBundleIdentifier</key>
     <string>com.bingowu.polaris</string>
     <key>CFBundleVersion</key>
-    <string>28</string>
+    <string>29</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.5.2</string>
+    <string>1.5.3</string>
     <key>CFBundleExecutable</key>
     <string>Polaris</string>
     <key>CFBundleIconFile</key>

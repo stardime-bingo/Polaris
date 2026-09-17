@@ -398,7 +398,12 @@ final class Store {
     func undoCompletion(_ item: TodoItem) -> Bool {
         guard let parent = items.first(where: { $0.id == item.id }), parent.isCompleted else { return false }
         let before = items
-        let child = items.first { $0.id == parent.spawnedRecurrenceID && $0.recurrenceParentID == parent.id && !$0.isCompleted && ($0.localModifiedAt ?? $0.createdAt) <= $0.createdAt }
+        let child = items.first {
+            $0.id == parent.spawnedRecurrenceID && $0.recurrenceParentID == parent.id && !$0.isCompleted &&
+            ($0.localModifiedAt ?? $0.createdAt) <= $0.createdAt &&
+            // Local-only step toggles deliberately leave parent timestamps intact.
+            !$0.steps.contains(where: \.isCompleted)
+        }
         if let child {
             guard prepareReminderDeletions([child]) else { return false }
             items.removeAll { $0.id == child.id }
